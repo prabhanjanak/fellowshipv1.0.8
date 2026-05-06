@@ -119,6 +119,48 @@ function getStorageUrl(objectPath: string): string {
 
 function DocValue({ label, url }: { label: string; url: string | null }) {
   const [expanded, setExpanded] = useState(false);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const fetchAndOpen = async (inline: boolean) => {
+    if (!url || !url.startsWith("/objects/")) return;
+    const servingUrl = `/api/storage${url}`;
+    const token = localStorage.getItem("fellowship_token");
+    setFetchError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(servingUrl, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      if (inline) {
+        setBlobUrl(objectUrl);
+        setExpanded(true);
+      } else {
+        // Open in new tab
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.target = "_blank";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+      }
+    } catch (e: any) {
+      setFetchError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggle = () => {
+    if (expanded) {
+      setExpanded(false);
+    } else if (blobUrl) {
+      setExpanded(true);
+    } else {
+      fetchAndOpen(true);
+    }
+  };
 
   if (!url || url === "nil" || url === "null") {
     return <span className="text-xs text-muted-foreground">Not provided</span>;
@@ -139,32 +181,34 @@ function DocValue({ label, url }: { label: string; url: string | null }) {
         </a>
       );
     }
-    return (
-      <Badge variant="outline" className="text-xs font-mono py-0">{refId}</Badge>
-    );
+    return <Badge variant="outline" className="text-xs font-mono py-0">{refId}</Badge>;
   }
 
-  // Object storage path — show inline viewer
+  // Object storage path — fetch with auth and show inline
   if (url.startsWith("/objects/")) {
-    const servingUrl = getStorageUrl(url);
     const isPhoto = label.toLowerCase().includes("photo");
     return (
       <div className="w-full mt-1 space-y-1.5">
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1" onClick={() => setExpanded((v) => !v)}>
-            {isPhoto ? <ImageIcon className="h-3 w-3" /> : <FileText className="h-3 w-3" />}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1" onClick={toggle} disabled={loading}>
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : isPhoto ? <ImageIcon className="h-3 w-3" /> : <FileText className="h-3 w-3" />}
             {expanded ? "Hide" : "View"} {label}
           </Button>
-          <a href={servingUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-0.5">
+          <button
+            className="text-xs text-primary hover:underline flex items-center gap-0.5"
+            onClick={() => fetchAndOpen(false)}
+            disabled={loading}
+          >
             <ExternalLink className="h-3 w-3" /> Open
-          </a>
+          </button>
         </div>
-        {expanded && isPhoto && (
-          <img src={servingUrl} alt={label} className="rounded-lg border max-h-48 max-w-full object-contain" />
+        {fetchError && <p className="text-xs text-destructive">{fetchError}</p>}
+        {expanded && blobUrl && isPhoto && (
+          <img src={blobUrl} alt={label} className="rounded-lg border max-h-48 max-w-full object-contain" />
         )}
-        {expanded && !isPhoto && (
+        {expanded && blobUrl && !isPhoto && (
           <iframe
-            src={servingUrl}
+            src={blobUrl}
             className="w-full rounded-lg border"
             style={{ height: 380 }}
             title={label}

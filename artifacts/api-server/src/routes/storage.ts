@@ -70,9 +70,14 @@ router.get("/storage/objects/*path", requireAuth, requireRole("super_admin", "pr
 
     const isReplit = !!process.env.REPL_ID;
     if (!isReplit) {
-      import("path").then(path => {
-        const localPath = path.join(process.cwd(), "uploads", objectPath.replace("/objects/uploads/", ""));
-        res.sendFile(localPath);
+      import("path").then(async (pathMod) => {
+        const { fileURLToPath } = await import("url");
+        // Go up from dist/routes/ → api-server root
+        const apiServerRoot = pathMod.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+        const localPath = pathMod.join(apiServerRoot, "uploads", objectPath.replace("/objects/uploads/", ""));
+        res.sendFile(localPath, (err) => {
+          if (err && !res.headersSent) res.status(404).json({ error: "File not found on disk" });
+        });
       });
       return;
     }

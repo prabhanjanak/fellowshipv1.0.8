@@ -20,6 +20,7 @@ export const applicationFormsTable = pgTable("application_forms", {
   createdBy: integer("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   customFields: jsonb("custom_fields").$type<CustomField[]>().default([]),
+  sectionsConfig: jsonb("sections_config").$type<any[]>().default([]),
   googleFormsConfig: jsonb("google_forms_config").$type<{ formId: string; serviceAccountJson: Record<string, unknown> } | null>().default(null),
 });
 

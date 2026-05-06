@@ -52,8 +52,8 @@ router.post(
   requireAuth,
   requireRole("super_admin", "program_admin", "central_exam_coordinator"),
   async (req, res) => {
-    const { programId, title, description, deadline } = req.body as {
-      programId: number; title: string; description?: string; deadline?: string;
+    const { programId, title, description, deadline, sectionsConfig } = req.body as {
+      programId: number; title: string; description?: string; deadline?: string; sectionsConfig?: any[];
     };
     if (!programId || !title) return res.status(400).json({ error: "programId and title required" });
 
@@ -68,6 +68,7 @@ router.post(
       isActive: true,
       createdBy: req.user!.userId,
       customFields: (customFields as never) ?? [],
+      sectionsConfig: (sectionsConfig as never) ?? [],
     }).returning();
     res.status(201).json(form);
   }
@@ -79,8 +80,9 @@ router.patch(
   requireRole("super_admin", "program_admin", "central_exam_coordinator"),
   async (req, res) => {
     const id = Number(req.params.id);
-    const { isActive, deadline, title, description, customFields } = req.body as {
-      isActive?: boolean; deadline?: string | null; title?: string; description?: string; customFields?: unknown[];
+    const { isActive, deadline, title, description, customFields, sectionsConfig } = req.body as {
+      isActive?: boolean; deadline?: string | null; title?: string; description?: string;
+      customFields?: unknown[]; sectionsConfig?: any[];
     };
     const updates: Partial<typeof applicationFormsTable.$inferInsert> = {};
     if (isActive !== undefined) updates.isActive = isActive;
@@ -88,6 +90,7 @@ router.patch(
     if (description !== undefined) updates.description = description;
     if (deadline !== undefined) updates.deadline = deadline ? new Date(deadline) : null;
     if (customFields !== undefined) updates.customFields = customFields as never;
+    if (sectionsConfig !== undefined) updates.sectionsConfig = sectionsConfig as never;
 
     const [updated] = await db
       .update(applicationFormsTable)
@@ -347,7 +350,7 @@ router.post(
               candidateCode: candidate.candidateCode,
               programName: prog[0]?.name ?? "Fellowship Program",
               formTitle: form[0]?.title ?? "Application",
-            }).catch(() => {});
+            }).catch(() => { });
           }
           approved++;
         } catch (e) {
@@ -535,10 +538,10 @@ router.post(
         // All merged Google Forms response IDs (comma-separated for traceability)
         const allResponseIds = group.responseIds.join(",");
 
-        const phone        = ex(["mobile number", "phone number", "mobile", "phone", "contact number"]);
-        const degree       = ex(["degrees & other", "degree", "qualification", "mbbs"]);
+        const phone = ex(["mobile number", "phone number", "mobile", "phone", "contact number"]);
+        const degree = ex(["degrees & other", "degree", "qualification", "mbbs"]);
         const medicalCollege = ex(["medical college qualified", "medical college", "college"]);
-        const university   = ex(["university from which", "university"]);
+        const university = ex(["university from which", "university"]);
         const pgQualifications = ex(["postgraduate qual", "pg qual"]);
         const medicalCouncilNumber = ex(["medical council registration", "council registration", "registration number"]);
         const publications = ex(["journal.*publication", "publications"]);
@@ -546,16 +549,16 @@ router.post(
         const referralSource = ex(["where did you hear", "hear about"]);
         const referredByName = ex(["referred.*faculty", "faculty.*trainee", "referred by"]);
         const permanentAddress = ex(["permanent address"]);
-        const dateOfBirth  = ex(["date of birth"]);
+        const dateOfBirth = ex(["date of birth"]);
         const maritalStatus = ex(["marital status"]);
         const healthDeclaration = ex(["medical condition", "ailments", "suffering"]);
-        const lor1Url      = ex(["lor 1", "letter of recommendation 1"]);
-        const lor1RefName  = ex(["name.*designation.*reference", "designation of reference"]);
+        const lor1Url = ex(["lor 1", "letter of recommendation 1"]);
+        const lor1RefName = ex(["name.*designation.*reference", "designation of reference"]);
         const lor1RefContact = ex(["contact number of reference"]);
         const lor1RefEmail = ex(["email id of reference", "email.*reference"]);
-        const lor2Url      = ex(["lor 2", "letter of recommendation 2"]);
-        const paymentUrl   = ex(["screenshot.*transaction", "payment.*screenshot", "transaction id", "utr"]);
-        const photoUrl     = ex(["passport size photograph", "passport photo", "photograph"]);
+        const lor2Url = ex(["lor 2", "letter of recommendation 2"]);
+        const paymentUrl = ex(["screenshot.*transaction", "payment.*screenshot", "transaction id", "utr"]);
+        const photoUrl = ex(["passport size photograph", "passport photo", "photograph"]);
 
         // Check if a submission already exists for this email+formId (from a previous sync)
         const existingSubResult = await db.execute(sql`
@@ -649,10 +652,10 @@ router.post("/apply/:token/request-upload-url", async (req, res) => {
       // Local fallback
       const objectId = Math.random().toString(36).substring(2, 15);
       const ext = name.split('.').pop() ?? "bin";
-      
+
       let folderName = candidateName ? candidateName.trim().replace(/[^a-zA-Z0-9\s]/g, "").replace(/\s+/g, "_") : "Unknown_Candidate";
       const filename = `${objectId}.${ext}`;
-      
+
       const uploadURL = `/api/apply/${req.params.token}/local-upload/${folderName}/${filename}`;
       const objectPath = `/objects/uploads/${folderName}/${filename}`;
       return res.json({ uploadURL, objectPath, metadata: { name: name.trim(), size, contentType } });
@@ -674,16 +677,16 @@ router.put("/apply/:token/local-upload/:folderName/:filename", async (req, res) 
   try {
     const uploadDir = path.join(process.cwd(), "uploads", req.params.folderName);
     await fs.mkdir(uploadDir, { recursive: true });
-    
+
     const filePath = path.join(uploadDir, req.params.filename);
     const writeStream = createWriteStream(filePath);
-    
+
     req.pipe(writeStream);
-    
+
     req.on("end", () => {
       res.json({ success: true, path: `/objects/uploads/${req.params.folderName}/${req.params.filename}` });
     });
-    
+
     req.on("error", (err) => {
       console.error("Upload error:", err);
       res.status(500).json({ error: "Upload failed" });
@@ -729,7 +732,14 @@ router.get("/apply/:token", async (req, res) => {
   const dbUnits = (unitResult.rows as { unit_name: string }[]).map((r) => r.unit_name);
   const units = dbUnits.length > 0 ? dbUnits : CANONICAL_UNITS;
 
-  res.json({ ...form, programName: program?.name ?? null, specialities, units, customFields: form.customFields ?? [] });
+  res.json({
+    ...form,
+    programName: program?.name ?? null,
+    specialities,
+    units,
+    customFields: form.customFields ?? [],
+    sectionsConfig: form.sectionsConfig ?? []
+  });
 });
 
 // Public: payment config
@@ -767,96 +777,67 @@ router.post("/apply/:token", async (req, res) => {
     return res.status(410).json({ error: "The deadline for this form has passed" });
   }
 
-  const body = req.body as Record<string, unknown>;
-  if (!body.fullName || !body.email) {
-    return res.status(400).json({ error: "Full name and email are required" });
-  }
+  const body = req.body as Record<string, any>;
+  const sections = (form.sectionsConfig as any[]) || [];
 
-  // Prevent duplicate submissions within 60 seconds
-  const duplicateCheck = await db.execute(sql`
-    SELECT id FROM application_submissions 
-    WHERE form_id = ${form.id} 
-    AND email = ${body.email} 
-    AND submitted_at > NOW() - INTERVAL '1 minute'
-  `);
-  if (duplicateCheck.rows.length > 0) {
-    return res.status(429).json({ error: "Duplicate submission detected. Please wait a minute before trying again." });
-  }
-
-  const lor1UrlRaw = (body.lor1Url as string) ?? null;
-  const lor2UrlRaw = (body.lor2Url as string) ?? null;
-  const photoUrlRaw = (body.photoUrl as string) ?? null;
-
-  if (lor1UrlRaw && !lor1UrlRaw.startsWith("/objects/uploads/")) {
-    return res.status(400).json({ error: "Invalid LOR 1 file path — please upload using the form uploader." });
-  }
-  if (lor2UrlRaw && !lor2UrlRaw.startsWith("/objects/uploads/")) {
-    return res.status(400).json({ error: "Invalid LOR 2 file path — please upload using the form uploader." });
-  }
-  if (photoUrlRaw && !photoUrlRaw.startsWith("/objects/uploads/")) {
-    return res.status(400).json({ error: "Invalid passport photo path — please upload using the form uploader." });
-  }
-
-  const subData = {
+  const subData: Record<string, any> = {
     formId: form.id,
     status: (body.saveAsDraft as boolean) ? "draft" : "pending",
     saveAsDraft: (body.saveAsDraft as boolean) ?? false,
     source: "internal",
-    specialization: (body.specialization as string) ?? null,
-    centerPreference: (body.centerPreference as string) ?? null,
-    referralSource: (body.referralSource as string) ?? null,
-    referredByName: (body.referredByName as string) ?? null,
-    mediaSource: (body.mediaSource as string) ?? null,
-    fullName: body.fullName as string,
-    permanentAddress: (body.permanentAddress as string) ?? null,
-    mailingAddress: (body.mailingAddress as string) ?? null,
-    phone: (body.phone as string) ?? null,
-    email: body.email as string,
-    dateOfBirth: (body.dateOfBirth as string) ?? null,
-    maritalStatus: (body.maritalStatus as string) ?? null,
-    spouseDetails: (body.spouseDetails as string) ?? null,
-    healthDeclaration: (body.healthDeclaration as string) ?? null,
-    healthDetails: (body.healthDetails as string) ?? null,
-    medicalConditions: body.medicalConditions ? JSON.stringify(body.medicalConditions) : null,
-    previousApplicationMonthYear: (body.previousApplicationMonthYear as string) ?? null,
-    degree: (body.degree as string) ?? null,
-    medicalCollege: (body.medicalCollege as string) ?? null,
-    university: (body.university as string) ?? null,
-    pgQualifications: (body.pgQualifications as string) ?? null,
-    doQualification: (body.doQualification as boolean) ?? null,
-    doDetails: (body.doDetails as string) ?? null,
-    msMdQualification: (body.msMdQualification as boolean) ?? null,
-    msMdDetails: (body.msMdDetails as string) ?? null,
-    dnbQualification: (body.dnbQualification as boolean) ?? null,
-    dnbDetails: (body.dnbDetails as string) ?? null,
-    otherTraining: (body.otherTraining as string) ?? null,
-    medicalCouncilNumber: (body.medicalCouncilNumber as string) ?? null,
-    diagnosticSkills: body.diagnosticSkills ? JSON.stringify(body.diagnosticSkills) : null,
-    surgicalExperience: body.surgicalExperience ? JSON.stringify(body.surgicalExperience) : null,
-    totalSurgeries: (body.totalSurgeries as string) ?? null,
-    publications: (body.publications as string) ?? null,
-    presentations: (body.presentations as string) ?? null,
-    lor1Url: lor1UrlRaw,
-    lor1RefName: (body.lor1RefName as string) ?? null,
-    lor1RefContact: (body.lor1RefContact as string) ?? null,
-    lor1RefEmail: (body.lor1RefEmail as string) ?? null,
-    lor2Url: lor2UrlRaw,
-    lor2RefName: (body.lor2RefName as string) ?? null,
-    lor2RefContact: (body.lor2RefContact as string) ?? null,
-    lor2RefEmail: (body.lor2RefEmail as string) ?? null,
-    otherInformation: (body.otherInformation as string) ?? null,
-    declarationAccepted: (body.declarationAccepted as boolean) ?? false,
-    paymentUrl: (body.paymentId as string) ? `razorpay:${body.paymentId}` : ((body.paymentUrl as string) ?? null),
-    photoUrl: photoUrlRaw,
-    customAnswers: (body.customAnswers as Record<string, string>) ?? {},
+    customAnswers: {},
+    submittedAt: new Date(),
   };
+
+  // Map fields from body based on sectionsConfig
+  sections.forEach((sec: any) => {
+    if (!sec.enabled) return;
+    sec.fields.forEach((f: any) => {
+      let val = body[f.id];
+      if (val === undefined) return;
+
+      // If standard mapping exists, use it
+      if (f.isStandard && f.mapping) {
+        // Special handling for JSON fields if they come as arrays/objects
+        if (['medicalConditions', 'diagnosticSkills', 'surgicalExperience', 'qualificationMatrix'].includes(f.mapping)) {
+          if (val && typeof val !== 'string') val = JSON.stringify(val);
+        }
+        subData[f.mapping] = val;
+      } else {
+        // Otherwise put in customAnswers
+        subData.customAnswers[f.id] = val;
+      }
+    });
+  });
+
+  // Fallback for mandatory fields if not mapped
+  if (!subData.fullName && body.fullName) subData.fullName = body.fullName;
+  if (!subData.email && body.email) subData.email = body.email;
+
+  if (!subData.fullName || !subData.email) {
+    return res.status(400).json({ error: "Full name and email are required" });
+  }
+
+  // File path validation
+  const fileFields = ['lor1Url', 'lor2Url', 'photoUrl', 'paymentUrl'];
+  for (const f of fileFields) {
+    const val = subData[f] || body[f];
+    if (val && typeof val === 'string' && val.startsWith('/objects/') && !val.startsWith('/objects/uploads/')) {
+      return res.status(400).json({ error: `Invalid file path for ${f}` });
+    }
+    if (val && !subData[f]) subData[f] = val;
+  }
+
+  // Payment mapping
+  const razorpayId = body.paymentId || body.payment_id;
+  if (razorpayId) subData.paymentUrl = `razorpay:${razorpayId}`;
 
   const isComplete = checkCompleteness(subData);
 
   const [sub] = await db.insert(applicationSubmissionsTable).values({
     ...subData,
     readyForReview: isComplete,
-  } as never).returning();
+  } as any).returning();
 
   res.status(201).json({ success: true, submissionId: sub!.id });
 });
