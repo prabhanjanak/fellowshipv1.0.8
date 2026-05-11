@@ -7,7 +7,6 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Separator } from "../components/ui/separator";
-import { Textarea } from "../components/ui/textarea";
 import { useToast } from "../hooks/use-toast";
 import { 
   Mail, 
@@ -18,8 +17,6 @@ import {
   Save, 
   Bell,
   MailCheck,
-  FileText,
-  FileCode2,
 } from "lucide-react";
 
 export default function EmailSettingsPage() {
@@ -63,129 +60,87 @@ export default function EmailSettingsPage() {
     <div className="p-6 max-w-4xl mx-auto space-y-6 pb-20">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Email Configuration</h1>
-          <p className="text-muted-foreground">Manage SMTP settings and Google Docs document templates.</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Email Configuration</h1>
+          <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px]">Manage SMTP settings and automated notification triggers.</p>
         </div>
-        <BadgeCheck className="h-10 w-10 text-primary/20" />
+        <MailCheck className="h-10 w-10 text-primary/20" />
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
-        <Card className="shadow-sm">
+        <Card className="shadow-sm border-slate-200">
           <CardHeader>
             <div className="flex items-center gap-2">
               <Settings className="h-5 w-5 text-primary" />
-              <CardTitle>SMTP Server Settings</CardTitle>
+              <CardTitle className="font-black text-sm uppercase tracking-widest">SMTP Server Settings</CardTitle>
             </div>
-            <CardDescription>Configure your outgoing mail server (SMTP) for system notifications.</CardDescription>
+            <CardDescription className="text-[10px] font-bold uppercase">Configure your outgoing mail server (SMTP) for system notifications.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-dashed">
+            <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-dashed border-slate-300">
               <div className="space-y-0.5">
-                <Label className="text-base">Enable Email Notifications</Label>
-                <p className="text-sm text-muted-foreground">Allow the system to send automated emails.</p>
+                <Label className="text-sm font-black uppercase tracking-tight">Enable Email Notifications</Label>
+                <p className="text-[10px] text-muted-foreground font-bold italic">Allow the system to send automated emails.</p>
               </div>
               <Switch name="enabled" defaultChecked={settings?.enabled} />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
               <div className="space-y-2">
-                <Label htmlFor="host">SMTP Host</Label>
-                <Input id="host" name="host" defaultValue={settings?.host} placeholder="smtp.gmail.com" required />
+                <Label htmlFor="host" className="text-[10px] font-black uppercase text-slate-500">SMTP Host</Label>
+                <Input id="host" name="host" defaultValue={settings?.host} placeholder="smtp.gmail.com" required className="font-bold" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="port">Port</Label>
-                <Input id="port" name="port" type="number" defaultValue={settings?.port} placeholder="465 or 587" required />
+                <Label htmlFor="port" className="text-[10px] font-black uppercase text-slate-500">Port</Label>
+                <Input id="port" name="port" type="number" defaultValue={settings?.port} placeholder="465 or 587" required className="font-bold" />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="user">Username / Email</Label>
-                <Input id="user" name="user" defaultValue={settings?.user} placeholder="notifications@yourdomain.com" required />
+                <Label htmlFor="user" className="text-[10px] font-black uppercase text-slate-500">Username / Email</Label>
+                <Input id="user" name="user" defaultValue={settings?.user} placeholder="notifications@yourdomain.com" required className="font-bold" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="pass">Password</Label>
-                <Input id="pass" name="pass" type="password" defaultValue={settings?.pass} placeholder="••••••••" />
+                <Label htmlFor="pass" className="text-[10px] font-black uppercase text-slate-500">Password</Label>
+                <Input id="pass" name="pass" type="password" defaultValue={settings?.pass} placeholder="••••••••" className="font-bold" />
               </div>
             </div>
 
             <div className="flex items-center space-x-2 pt-2">
               <Switch id="useSsl" name="useSsl" defaultChecked={settings?.useSsl} />
-              <Label htmlFor="useSsl">Use SSL/TLS (Recommended for port 465)</Label>
+              <Label htmlFor="useSsl" className="text-[10px] font-black uppercase text-slate-500">Use SSL/TLS (Recommended for port 465)</Label>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm">
+        <Card className="shadow-sm border-slate-200">
           <CardHeader>
             <div className="flex items-center gap-2">
               <Mail className="h-5 w-5 text-primary" />
-              <CardTitle>Sender Details</CardTitle>
+              <CardTitle className="font-black text-sm uppercase tracking-widest">Sender Details</CardTitle>
             </div>
-            <CardDescription>How the emails will appear in the candidate's inbox.</CardDescription>
+            <CardDescription className="text-[10px] font-bold uppercase">How the emails will appear in the candidate's inbox.</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="fromName">Sender Name</Label>
-              <Input id="fromName" name="fromName" defaultValue={settings?.fromName} placeholder="Sankara Academy of Vision" required />
+              <Label htmlFor="fromName" className="text-[10px] font-black uppercase text-slate-500">Sender Name</Label>
+              <Input id="fromName" name="fromName" defaultValue={settings?.fromName} placeholder="Sankara Academy of Vision" required className="font-bold" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="fromEmail">Sender Email</Label>
-              <Input id="fromEmail" name="fromEmail" defaultValue={settings?.fromEmail} placeholder="admissions@sankaraeye.com" required />
+              <Label htmlFor="fromEmail" className="text-[10px] font-black uppercase text-slate-500">Sender Email</Label>
+              <Input id="fromEmail" name="fromEmail" defaultValue={settings?.fromEmail} placeholder="admissions@sankaraeye.com" required className="font-bold" />
             </div>
           </CardContent>
         </Card>
 
-        {/* Google Docs Template Integration */}
-        <Card className="border-primary/20 bg-primary/5 shadow-sm">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              <CardTitle>Google Docs API Template</CardTitle>
-            </div>
-            <CardDescription>Generate professional PDF offer letters from a Google Doc template.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="googleDocsTemplateId">Google Doc Template ID</Label>
-              <Input 
-                id="googleDocsTemplateId" 
-                name="googleDocsTemplateId" 
-                defaultValue={settings?.googleDocsTemplateId} 
-                placeholder="1aBc2DeFgHiJkLmNoPqRsTuVwXyZ..." 
-              />
-              <p className="text-[10px] text-muted-foreground italic">
-                The document must have placeholders like <strong>{`{{candidateName}}`}</strong>, <strong>{`{{specialization}}`}</strong>, etc.
-              </p>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="googleServiceAccountJson" className="flex items-center gap-2">
-                <FileCode2 className="h-4 w-4 text-primary" />
-                Service Account JSON
-              </Label>
-              <Textarea 
-                id="googleServiceAccountJson" 
-                name="googleServiceAccountJson" 
-                defaultValue={settings?.googleServiceAccountJson} 
-                placeholder='{ "type": "service_account", ... }'
-                className="font-mono text-xs h-32"
-              />
-              <p className="text-[10px] text-muted-foreground">
-                Paste the contents of your Google Cloud Service Account JSON file. Ensure the service account has access to the template doc.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="flex items-center justify-between gap-4 bg-white p-4 rounded-xl border shadow-md sticky bottom-6 z-50">
+        <div className="flex items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-md sticky bottom-6 z-50">
           <div className="flex items-center gap-3">
             <ShieldCheck className="h-5 w-5 text-emerald-500" />
-            <p className="text-sm font-bold text-slate-700">Verify your settings before sending offers.</p>
+            <p className="text-sm font-black text-slate-700 uppercase tracking-tight">Verify your settings before sending offers.</p>
           </div>
-          <Button type="submit" size="lg" className="gap-2 px-10 font-black uppercase tracking-widest text-xs" disabled={saveMutation.isPending}>
+          <Button type="submit" size="lg" className="gap-2 px-10 font-black uppercase tracking-widest text-xs h-12" disabled={saveMutation.isPending}>
             {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save All Configuration
+            Save Settings
           </Button>
         </div>
       </form>
@@ -196,9 +151,9 @@ export default function EmailSettingsPage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Send className="h-5 w-5 text-blue-600" />
-            <CardTitle className="text-blue-900">Test Connection</CardTitle>
+            <CardTitle className="text-blue-900 font-black text-sm uppercase tracking-widest">Test Connection</CardTitle>
           </div>
-          <CardDescription>Send a test email to verify your SMTP settings are correct.</CardDescription>
+          <CardDescription className="text-[10px] font-bold uppercase text-blue-700/60">Send a test email to verify your SMTP settings are correct.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-3">
@@ -206,29 +161,20 @@ export default function EmailSettingsPage() {
               placeholder="Enter recipient email..." 
               value={testEmail} 
               onChange={(e) => setTestEmail(e.target.value)}
-              className="max-w-md"
+              className="max-w-md font-bold"
             />
             <Button 
               variant="secondary" 
-              className="gap-2 bg-blue-600 text-white hover:bg-blue-700 font-bold" 
+              className="gap-2 bg-blue-600 text-white hover:bg-blue-700 font-black uppercase text-[10px] tracking-widest h-10 px-6" 
               onClick={() => testMutation.mutate(testEmail)}
               disabled={!testEmail || testMutation.isPending}
             >
-              {testMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MailCheck className="h-4 w-4" />}
+              {testMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
               Send Test Email
             </Button>
           </div>
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function BadgeCheck({ className }: { className?: string }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/>
-      <path d="m9 12 2 2 4-4"/>
-    </svg>
   );
 }
