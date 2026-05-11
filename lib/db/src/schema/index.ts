@@ -13,3 +13,4 @@ export * from "./seat-matrix";
 export * from "./payment-settings";
 export * from "./panels";
 export * from "./email-settings";
+export * from "./document-templates";

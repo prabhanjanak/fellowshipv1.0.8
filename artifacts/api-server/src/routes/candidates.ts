@@ -18,6 +18,7 @@ import {
   candidateExamAssignmentsTable,
   applicationSubmissionsTable,
   programsTable,
+  documentTemplatesTable,
 } from "@workspace/db";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { sendOfferLetterEmail, sendOfferLetterWithAttachment } from "../lib/email";
@@ -417,21 +418,30 @@ router.post("/candidates/:id/send-offer", requireAuth, requireRole("super_admin"
   try {
     const [settings] = await db.select().from(emailSettingsTable).limit(1);
     
-    // Check for program-specific template
-    let templateId = settings?.googleDocsTemplateId;
-    const [submission] = await db.select().from(applicationSubmissionsTable).where(eq(applicationSubmissionsTable.email, c.email));
-    if (submission?.formId) {
-      const [form] = await db.select().from(applicationFormsTable).where(eq(applicationFormsTable.id, submission.formId));
-      if (form?.programId) {
-        const [prog] = await db.select().from(programsTable).where(eq(programsTable.id, form.programId));
-        if (prog?.offerLetterTemplateId) {
-          templateId = prog.offerLetterTemplateId;
+    // 1. Get Template ID (priority: passed ID > program ID > global ID)
+    let templateId = req.body.templateId; // Use the specific template selected in UI
+    
+    if (!templateId) {
+      // Fallback logic
+      templateId = settings?.googleDocsTemplateId;
+      const [submission] = await db.select().from(applicationSubmissionsTable).where(eq(applicationSubmissionsTable.email, c.email));
+      if (submission?.formId) {
+        const [form] = await db.select().from(applicationFormsTable).where(eq(applicationFormsTable.id, submission.formId));
+        if (form?.programId) {
+          const [prog] = await db.select().from(programsTable).where(eq(programsTable.id, form.programId));
+          if (prog?.offerLetterTemplateId) {
+            templateId = prog.offerLetterTemplateId;
+          }
         }
       }
+    } else {
+      // Fetch the actual google doc ID from our templates table
+      const [tpl] = await db.select().from(documentTemplatesTable).where(eq(documentTemplatesTable.id, Number(templateId)));
+      if (tpl) templateId = tpl.googleDocId;
     }
 
     if (templateId && settings?.googleServiceAccountJson) {
-      // Build replacements from standard fields + body details + dynamic custom fields
+      // Build replacements
       const replacements: Record<string, string> = {
         letter_date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
         name: c.fullName,
@@ -447,7 +457,7 @@ router.post("/candidates/:id/send-offer", requireAuth, requireRole("super_admin"
         stipend_words: req.body.stipend_words || "Zero",
         reporting_doctor: req.body.reporting_doctor || "the Chief Medical Officer",
         signing_authority: req.body.signing_authority || "Director",
-        ...(req.body.custom_fields || {}) // Merge dynamic fields from UI
+        ...(req.body.custom_fields || {})
       };
 
       const pdfBuffer = await processGoogleDocTemplate({
@@ -483,6 +493,68 @@ router.post("/candidates/:id/send-offer", requireAuth, requireRole("super_admin"
   } catch (e: any) {
     console.error("[email] Failed to send offer letter", e);
     res.status(500).json({ error: e.message || "Failed to send email." });
+  }
+});
+
+// Generate and Download PDF
+router.post("/candidates/:id/generate-document", requireAuth, requireRole("super_admin", "program_admin"), async (req, res) => {
+  const id = Number(req.params.id);
+  const [c] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, id));
+  if (!c) return res.status(404).json({ error: "Candidate not found" });
+
+  const specialization = c.reviewNotes?.includes("Allocated to ") 
+    ? c.reviewNotes.replace("Allocated to ", "").split(" [")[0] 
+    : "Fellowship";
+
+  const units = await db.select().from(unitsTable);
+  const unit = c.unitId ? units.find(u => u.id === c.unitId) : null;
+  const unitName = unit?.name || "Sankara Eye Hospital";
+
+  try {
+    const [settings] = await db.select().from(emailSettingsTable).limit(1);
+    let googleDocId = req.body.templateId; 
+
+    if (googleDocId && !isNaN(Number(googleDocId))) {
+       const [tpl] = await db.select().from(documentTemplatesTable).where(eq(documentTemplatesTable.id, Number(googleDocId)));
+       if (tpl) googleDocId = tpl.googleDocId;
+    }
+
+    if (!googleDocId) googleDocId = settings?.googleDocsTemplateId;
+
+    if (!googleDocId || !settings?.googleServiceAccountJson) {
+      return res.status(400).json({ error: "No document template configured." });
+    }
+
+    const replacements: Record<string, string> = {
+      letter_date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
+      name: c.fullName,
+      address: c.address || "",
+      interview_date: req.body.interview_date || "—",
+      specialization: specialization,
+      unit: unitName,
+      duration: req.body.duration || "24 Months",
+      start_date: req.body.start_date || "—",
+      reporting_date: req.body.reporting_date || "—",
+      induction_dates: req.body.induction_dates || "—",
+      stipend: String(req.body.stipend || "0"),
+      stipend_words: req.body.stipend_words || "Zero",
+      reporting_doctor: req.body.reporting_doctor || "the Chief Medical Officer",
+      signing_authority: req.body.signing_authority || "Director",
+      ...(req.body.custom_fields || {})
+    };
+
+    const pdfBuffer = await processGoogleDocTemplate({
+      templateId: googleDocId,
+      serviceAccountJson: settings.googleServiceAccountJson,
+      replacements
+    });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename=Offer_${c.candidateCode}.pdf`);
+    res.send(pdfBuffer);
+  } catch (e: any) {
+    console.error("[doc-gen] failed", e);
+    res.status(500).json({ error: e.message || "Failed to generate document." });
   }
 });
 
