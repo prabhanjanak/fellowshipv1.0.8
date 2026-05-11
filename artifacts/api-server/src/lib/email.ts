@@ -1,27 +1,35 @@
 import nodemailer from "nodemailer";
+import { db, emailSettingsTable } from "@workspace/db";
 
-function getTransporter() {
-  const host = process.env["SMTP_HOST"];
-  const port = Number(process.env["SMTP_PORT"] ?? "587");
-  const user = process.env["SMTP_USER"];
-  const pass = process.env["SMTP_PASS"];
-  const from = process.env["SMTP_FROM"] ?? "noreply@sankaraeye.com";
+async function getTransporter() {
+  const [settings] = await db.select().from(emailSettingsTable).limit(1);
+  if (!settings || !settings.enabled || !settings.host || !settings.user || !settings.pass) {
+    return null;
+  }
 
-  if (!host || !user || !pass) return null;
-
-  return { transporter: nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } }), from };
+  const port = Number(settings.port);
+  return {
+    transporter: nodemailer.createTransport({
+      host: settings.host,
+      port,
+      secure: settings.useSsl || port === 465,
+      auth: { user: settings.user, pass: settings.pass }
+    }),
+    from: settings.fromEmail || settings.user,
+    fromName: settings.fromName || "Sankara Academy of Vision"
+  };
 }
 
 export async function sendApplicationApprovalEmail(opts: {
   toEmail: string; toName: string; candidateCode: string; programName: string; formTitle: string;
 }) {
-  const cfg = getTransporter();
+  const cfg = await getTransporter();
   if (!cfg) {
-    console.warn("[email] SMTP not configured — skipping approval email to", opts.toEmail);
+    console.warn("[email] SMTP not configured or disabled — skipping approval email to", opts.toEmail);
     return;
   }
   await cfg.transporter.sendMail({
-    from: `"Sankara Academy of Vision" <${cfg.from}>`,
+    from: `"${cfg.fromName}" <${cfg.from}>`,
     to: opts.toEmail,
     subject: `Application Approved — ${opts.programName}`,
     html: `
@@ -58,7 +66,7 @@ export async function sendApplicationApprovalEmail(opts: {
 export async function sendStatusUpdateEmail(opts: {
   toEmail: string; toName: string; status: string; programName?: string;
 }) {
-  const cfg = getTransporter();
+  const cfg = await getTransporter();
   if (!cfg) return;
 
   const subjectMap: Record<string, string> = {
@@ -78,7 +86,7 @@ export async function sendStatusUpdateEmail(opts: {
   if (!subject || !body) return;
 
   await cfg.transporter.sendMail({
-    from: `"Sankara Academy of Vision" <${cfg.from}>`,
+    from: `"${cfg.fromName}" <${cfg.from}>`,
     to: opts.toEmail,
     subject,
     html: `

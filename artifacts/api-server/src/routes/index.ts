@@ -27,6 +27,7 @@ import paymentRouter from "./payment";
 import examManagementRouter from "./exam-management";
 import debugRouter from "./debug";
 import tvAccessRouter from "./tv-access";
+import emailSettingsRouter from "./email-settings";
 
 const router: IRouter = Router();
 
@@ -58,5 +59,6 @@ router.use(paymentRouter);
 router.use(examManagementRouter);
 router.use(debugRouter);
 router.use(tvAccessRouter);
+router.use(emailSettingsRouter);
 
 export default router;
