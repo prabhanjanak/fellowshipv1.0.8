@@ -644,12 +644,23 @@ export default function ApplicationFormsPage() {
   if (viewFormId !== null && viewSubId !== null && viewedSub) {
     const customFields = viewedForm?.customFields ?? [];
     return (
-      <div className="p-6 space-y-5">
-        <div className="flex items-center gap-3">
+      <div className="p-6 space-y-5 print-area">
+        <style>{`
+          @media print { 
+            aside, header, nav, .no-print { display: none !important; } 
+            body, main, .print-area { background: white !important; color: black !important; margin: 0; padding: 0; width: 100%; box-shadow: none !important; border: none !important; }
+            .print-area { padding: 1cm !important; }
+            .card { box-shadow: none !important; border: 1px solid #e2e8f0 !important; break-inside: avoid; }
+          }
+        `}</style>
+        <div className="flex items-center gap-3 no-print">
           <Button variant="ghost" size="sm" onClick={() => setViewSubId(null)} className="gap-1">
             <ArrowLeft className="h-4 w-4" /> Submissions
           </Button>
           <Badge className={STATUS_COLORS[viewedSub.status] ?? ""}>{viewedSub.status}</Badge>
+          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1 ml-auto">
+            <Download className="h-4 w-4" /> Download Application PDF
+          </Button>
         </div>
         {/* Specialization(s) banner — prominently shown at the top */}
         {(() => {
@@ -835,7 +846,7 @@ export default function ApplicationFormsPage() {
             </Card>
           )}
 
-          <Card>
+          <Card className="no-print">
             <CardHeader><CardTitle className="text-base">Review Actions</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div>
