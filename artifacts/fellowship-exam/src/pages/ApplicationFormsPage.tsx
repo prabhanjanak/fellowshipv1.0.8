@@ -1405,7 +1405,33 @@ export default function ApplicationFormsPage() {
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
                                     <Label className="text-[10px] font-bold text-muted-foreground uppercase">Field Label</Label>
-                                    <Badge variant="outline" className="text-[9px] py-0">{field.type}</Badge>
+                                    <Select 
+                                      value={field.type} 
+                                      onValueChange={(v) => {
+                                        const newCfg = [...editSectionsConfig];
+                                        newCfg[sIdx].fields[fIdx].type = v;
+                                        if (["select", "radio", "checkbox_group"].includes(v) && !newCfg[sIdx].fields[fIdx].options) {
+                                          newCfg[sIdx].fields[fIdx].options = ["Option 1"];
+                                        }
+                                        setEditSectionsConfig(newCfg);
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-6 text-[10px] py-0 w-36"><SelectValue /></SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="text">Short Text</SelectItem>
+                                        <SelectItem value="textarea">Paragraph</SelectItem>
+                                        <SelectItem value="phone">Mobile Number</SelectItem>
+                                        <SelectItem value="email">Email Address</SelectItem>
+                                        <SelectItem value="date">Date Picker</SelectItem>
+                                        <SelectItem value="select">Dropdown / Select</SelectItem>
+                                        <SelectItem value="radio">Radio Button</SelectItem>
+                                        <SelectItem value="checkbox_group">Checkbox Group</SelectItem>
+                                        <SelectItem value="checkbox">Single Checkbox (Yes/No)</SelectItem>
+                                        <SelectItem value="file">File Upload</SelectItem>
+                                        <SelectItem value="info">Information block</SelectItem>
+                                        <SelectItem value="number">Number</SelectItem>
+                                      </SelectContent>
+                                    </Select>
                                   </div>
                                   <Button 
                                     variant="ghost" 
@@ -1442,18 +1468,51 @@ export default function ApplicationFormsPage() {
                                     />
                                   </div>
                                 )}
-                                {field.options && (
-                                  <div className="mt-1">
-                                    <Label className="text-[9px] text-muted-foreground">Options (comma separated)</Label>
-                                    <Input
-                                      value={field.options.join(", ")}
-                                      onChange={(e) => {
+                                {field.options && ["select", "radio", "checkbox_group"].includes(field.type) && (
+                                  <div className="mt-2 space-y-1.5 p-2 bg-muted/20 border rounded text-xs">
+                                    <Label className="text-[10px] font-bold text-muted-foreground uppercase">Options</Label>
+                                    {(field.options || []).map((opt: string, oIdx: number) => (
+                                      <div key={oIdx} className="flex items-center gap-2">
+                                        <div className="w-4 h-4 rounded-full border border-muted-foreground/30 flex items-center justify-center shrink-0">
+                                          {field.type === 'checkbox_group' ? <Check className="h-2.5 w-2.5 text-muted-foreground/30" /> : <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" />}
+                                        </div>
+                                        <Input
+                                          value={opt}
+                                          onChange={(e) => {
+                                            const newCfg = [...editSectionsConfig];
+                                            newCfg[sIdx].fields[fIdx].options[oIdx] = e.target.value;
+                                            setEditSectionsConfig(newCfg);
+                                          }}
+                                          className="h-7 text-xs flex-1"
+                                          placeholder={`Option ${oIdx + 1}`}
+                                        />
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600 shrink-0"
+                                          onClick={() => {
+                                            const newCfg = [...editSectionsConfig];
+                                            newCfg[sIdx].fields[fIdx].options.splice(oIdx, 1);
+                                            setEditSectionsConfig(newCfg);
+                                          }}
+                                        >
+                                          <XIcon className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 text-[10px] gap-1 px-2 mt-1 hover:bg-muted"
+                                      onClick={() => {
                                         const newCfg = [...editSectionsConfig];
-                                        newCfg[sIdx].fields[fIdx].options = e.target.value.split(",").map((o: string) => o.trim()).filter(Boolean);
+                                        if (!newCfg[sIdx].fields[fIdx].options) newCfg[sIdx].fields[fIdx].options = [];
+                                        newCfg[sIdx].fields[fIdx].options.push(`Option ${(newCfg[sIdx].fields[fIdx].options.length || 0) + 1}`);
                                         setEditSectionsConfig(newCfg);
                                       }}
-                                      className="h-7 text-[10px]"
-                                    />
+                                    >
+                                      <Plus className="h-3 w-3" /> Add Option
+                                    </Button>
                                   </div>
                                 )}
                               </div>
