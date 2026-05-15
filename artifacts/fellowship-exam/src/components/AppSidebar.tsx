@@ -53,7 +53,6 @@ const navItems: NavItem[] = [
   { label: "Payments",          href: "/payments",           icon: CreditCard,      roles: ["super_admin", "program_admin", "central_exam_coordinator", "exam_coordinator"] },
   { label: "Batches",           href: "/batches",            icon: Grid3x3,         roles: ["super_admin", "program_admin", "central_exam_coordinator", "exam_coordinator"] },
   { label: "Reports",           href: "/reports",            icon: BarChart3,       roles: ["super_admin", "program_admin", "central_exam_coordinator", "exam_coordinator"] },
-  { label: "Letter Templates",  href: "/templates",          icon: FileText,        roles: ["super_admin", "program_admin", "central_exam_coordinator", "exam_coordinator"] },
   { label: "Email Settings",    href: "/email-settings",     icon: Mail,            roles: ["super_admin", "program_admin", "central_exam_coordinator", "exam_coordinator"] },
   { label: "My Results",        href: "/results",            icon: FileText,        roles: ["student"] },
   { label: "Waiting Hall (TV)",   href: "/tv",              icon: Monitor,         roles: ["super_admin", "program_admin", "central_exam_coordinator", "display_operator"] },

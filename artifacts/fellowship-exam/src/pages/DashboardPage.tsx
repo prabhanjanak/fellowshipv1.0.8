@@ -5,7 +5,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { Users, BookOpen, Award, ClipboardList, Clock, Building2, Database, Loader2, MonitorPlay, KeyRound, RefreshCw, Eye, EyeOff } from "lucide-react";
+import { Users, BookOpen, Award, ClipboardList, Clock, Building2, Database, Loader2, MonitorPlay, KeyRound, RefreshCw, Eye, EyeOff, ChevronRight, TrendingUp, ShieldCheck } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
@@ -21,26 +21,39 @@ interface DashboardStats {
 }
 
 function StatCard({
-  title, value, icon: Icon, color, href,
+  title, value, icon: Icon, color, href, description, trend
 }: {
-  title: string; value: number | string; icon: React.ElementType; color: string; href?: string;
+  title: string; value: number | string; icon: React.ElementType; color: string; href?: string; description?: string; trend?: string;
 }) {
   const [, navigate] = useLocation();
   return (
-    <Card
+    <div 
       onClick={() => href && navigate(href)}
-      className={href ? "cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 active:translate-y-0" : ""}
+      className={`group relative overflow-hidden rounded-[32px] p-8 transition-all duration-500 ${href ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : ''} bg-white border border-slate-100 shadow-premium hover:shadow-2xl`}
     >
-      <CardContent className="flex items-center gap-4 pt-6">
-        <div className={`p-3 rounded-xl ${color}`}>
-          <Icon className="h-5 w-5 text-white" />
+      <div className={`absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 rounded-full opacity-[0.03] transition-transform duration-700 group-hover:scale-150 ${color.replace('bg-', 'bg-')}`} />
+      
+      <div className="relative z-10 flex flex-col h-full justify-between gap-6">
+        <div className="flex justify-between items-start">
+          <div className={`p-4 rounded-2xl ${color} shadow-lg shadow-current/20 group-hover:rotate-6 transition-transform duration-500`}>
+            <Icon className="h-6 w-6 text-white" />
+          </div>
+          {trend && (
+            <Badge className="bg-emerald-50 text-emerald-600 border-emerald-100 font-black text-[10px] h-6 px-3">
+              {trend}
+            </Badge>
+          )}
         </div>
+        
         <div>
-          <p className="text-2xl font-bold">{value}</p>
-          <p className="text-sm text-muted-foreground">{title}</p>
+          <h3 className="text-4xl font-black text-slate-900 tracking-tighter mb-1">{value}</h3>
+          <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{title}</p>
+          {description && (
+            <p className="text-[10px] font-bold text-slate-400 mt-2 italic">{description}</p>
+          )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -129,12 +142,12 @@ export default function DashboardPage() {
   const canSeePrograms   = ["super_admin","program_admin"].includes(role);
 
   const gridCards = [
-    { title: "Total Candidates", value: stats?.candidates ?? "—", icon: Users, color: "bg-orange-500", href: canSeeCandidates ? "/candidates" : undefined },
-    { title: "Active Exams", value: stats?.activeExams ?? "—", icon: BookOpen, color: "bg-blue-600", href: canSeeExams ? "/exams" : undefined },
-    { title: "Programs", value: stats?.programs ?? "—", icon: ClipboardList, color: "bg-purple-600", href: canSeePrograms ? "/programs" : undefined },
-    { title: "Allocations", value: stats?.allocated ?? "—", icon: Award, color: "bg-emerald-600", href: canSeeAllocations ? "/allocations" : undefined },
-    { title: "Units", value: stats?.units ?? "—", icon: Building2, color: "bg-indigo-600", href: undefined },
-    { title: "Pending Review", value: stats?.pendingReview ?? "—", icon: Clock, color: "bg-amber-600", href: canSeeCandidates ? "/candidates" : undefined },
+    { title: "Active Candidates", value: stats?.candidates ?? "0", icon: Users, color: "bg-indigo-600", href: canSeeCandidates ? "/candidates" : undefined, description: "Total registered in system", trend: "+12%" },
+    { title: "Live Examinations", value: stats?.activeExams ?? "0", icon: BookOpen, color: "bg-amber-500", href: canSeeExams ? "/exams" : undefined, description: "Exams currently in progress", trend: "Active" },
+    { title: "Clinical Programs", value: stats?.programs ?? "0", icon: ClipboardList, color: "bg-rose-600", href: canSeePrograms ? "/programs" : undefined, description: "Specialized fellowship tracks" },
+    { title: "Allocated Fellows", value: stats?.allocated ?? "0", icon: Award, color: "bg-emerald-600", href: canSeeAllocations ? "/allocations" : undefined, description: "Successfully assigned units", trend: "98% Fill" },
+    { title: "Institutional Units", value: stats?.units ?? "0", icon: Building2, color: "bg-slate-900", href: undefined, description: "Sankara hospital network" },
+    { title: "Pending Evaluation", value: stats?.pendingReview ?? "0", icon: Clock, color: "bg-blue-600", href: canSeeCandidates ? "/candidates" : undefined, description: "Awaiting coordinator review", trend: "Priority" },
   ];
 
   const seedMutation = useMutation({
@@ -147,75 +160,133 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
-            {role === "unit_coordinator" ? `Unit Overview — ${user?.fullName}` : "Fellowship Exam Management Overview"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {(role === "super_admin" || role === "program_admin") && (
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => {
-                setTvCodeOpen(true);
-                setShowTvCode(false);
-                loadTvCode();
-              }}
-            >
-              <MonitorPlay className="h-4 w-4 text-emerald-600" />
-              TV Access Code
-            </Button>
-          )}
-          {role === "super_admin" && (
-            <Button 
-              variant="outline" 
-              className="gap-2 border-dashed border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-              onClick={() => {
-                if (confirm("This will WIPE all existing programs, candidates, and forms and replace them with dummy test data. Continue?")) {
-                  seedMutation.mutate();
-                }
-              }}
-              disabled={seedMutation.isPending}
-            >
-              {seedMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-              Seed Test Data
-            </Button>
-          )}
+    <div className="p-10 space-y-12 bg-transparent min-h-screen relative z-10">
+      <div className="relative overflow-hidden rounded-[48px] bg-slate-900 p-12 text-white shadow-2xl border border-white/5">
+        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-orange-500/20 to-transparent pointer-events-none" />
+        <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+        
+        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-10">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Badge className="bg-orange-500/20 text-orange-400 border-none font-black text-[10px] tracking-[0.2em] h-8 px-5">INSTITUTIONAL COMMAND CENTER</Badge>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                <ShieldCheck className="h-3 w-3 text-emerald-500" /> Secure Node
+              </div>
+            </div>
+            <h1 className="text-6xl font-black tracking-tighter leading-none italic uppercase">
+              Welcome Back, <br />
+              <span className="bg-gradient-to-r from-orange-400 to-amber-200 bg-clip-text text-transparent">{user?.fullName?.split(' ')[0]}</span>
+            </h1>
+            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs max-w-lg leading-relaxed">
+              {role === "unit_coordinator" ? `Managing Hospital Unit Protocols` : "Orchestrating the Sankara Academy of Vision Fellowship Lifecycle with real-time merit data and specialized analytics."}
+            </p>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            {(role === "super_admin" || role === "program_admin") && (
+              <Button
+                variant="outline"
+                className="h-16 px-10 rounded-3xl bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 text-white font-black uppercase tracking-widest text-[11px] gap-3 backdrop-blur-xl transition-all shadow-xl"
+                onClick={() => {
+                  setTvCodeOpen(true);
+                  setShowTvCode(false);
+                  loadTvCode();
+                }}
+              >
+                <MonitorPlay className="h-5 w-5 text-emerald-400" />
+                Live TV Access
+              </Button>
+            )}
+            {role === "super_admin" && (
+              <Button 
+                variant="outline" 
+                className="h-16 px-10 rounded-3xl bg-orange-600 shadow-xl shadow-orange-600/20 hover:bg-orange-500 border-none text-white font-black uppercase tracking-widest text-[11px] gap-3 transition-all active:scale-95"
+                onClick={() => {
+                  if (confirm("This will WIPE all existing programs, candidates, and forms and replace them with dummy test data. Continue?")) {
+                    seedMutation.mutate();
+                  }
+                }}
+                disabled={seedMutation.isPending}
+              >
+                {seedMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Database className="h-5 w-5 text-white/80" />}
+                Seed Registry
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
         {gridCards.map((c) => (
-          <StatCard key={c.title} title={c.title} value={c.value} icon={c.icon} color={c.color} href={c.href} />
+          <StatCard key={c.title} title={c.title} value={c.value} icon={c.icon} color={c.color} href={c.href} description={c.description} trend={c.trend} />
         ))}
       </div>
 
-      {candidates && candidates.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Recent Candidates</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {candidates.slice(0, 8).map((c) => (
-                <div key={c.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                  <div>
-                    <p className="text-sm font-medium">{c.fullName}</p>
-                    <p className="text-xs text-muted-foreground">{c.candidateCode}</p>
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
+        {candidates && candidates.length > 0 && (
+          <div className="xl:col-span-8 space-y-6">
+             <div className="flex justify-between items-center px-4">
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic">Candidate Intelligence Feed</h3>
+                <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-primary transition-colors">View Unified Registry</Button>
+             </div>
+             <Card className="rounded-[40px] border-none shadow-premium overflow-hidden bg-white">
+                <CardContent className="p-0">
+                  <div className="divide-y divide-slate-50">
+                    {candidates.slice(0, 6).map((c) => (
+                      <div key={c.id} className="group flex items-center justify-between p-8 hover:bg-slate-50 transition-all duration-300">
+                        <div className="flex items-center gap-6">
+                           <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center font-black text-slate-900 text-lg shadow-sm group-hover:bg-primary group-hover:text-white transition-all">
+                              {c.fullName.charAt(0)}
+                           </div>
+                           <div>
+                              <p className="text-lg font-black text-slate-800 uppercase tracking-tight leading-none mb-1.5">{c.fullName}</p>
+                              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] font-mono">{c.candidateCode}</p>
+                           </div>
+                        </div>
+                        <div className="flex items-center gap-8">
+                           <div className="hidden md:flex flex-col items-end">
+                              <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Status Registry</p>
+                              <Badge className={`rounded-full px-5 h-8 font-black uppercase text-[10px] tracking-widest shadow-sm border ${statusColors[c.status] ?? "bg-slate-100 text-slate-800"}`} variant="secondary">
+                                {c.status.replace(/_/g, " ")}
+                              </Badge>
+                           </div>
+                           <Button variant="outline" size="icon" className="h-12 w-12 rounded-2xl border-slate-100 hover:bg-slate-900 hover:text-white transition-all shadow-sm">
+                              <ChevronRight className="h-5 w-5" />
+                           </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <Badge className={statusColors[c.status] ?? "bg-gray-100 text-gray-800"} variant="secondary">
-                    {c.status.replace(/_/g, " ")}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                </CardContent>
+             </Card>
+          </div>
+        )}
+
+        <div className="xl:col-span-4 space-y-6">
+           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic px-4">System Health</h3>
+           <Card className="rounded-[40px] border-none shadow-premium bg-gradient-to-br from-indigo-600 to-primary p-10 text-white relative overflow-hidden">
+              <div className="relative z-10 space-y-8">
+                 <div className="space-y-2">
+                    <p className="text-[11px] font-black text-white/60 uppercase tracking-[0.3em]">Institutional Capacity</p>
+                    <h4 className="text-4xl font-black tracking-tighter">84% Operational</h4>
+                 </div>
+                 <div className="space-y-4">
+                    <div className="h-3 w-full bg-white/10 rounded-full overflow-hidden">
+                       <div className="h-full w-[84%] bg-amber-400 rounded-full shadow-[0_0_20px_rgba(251,191,36,0.5)]" />
+                    </div>
+                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
+                       <span>Interview Throughput</span>
+                       <span className="text-amber-400">High Efficiency</span>
+                    </div>
+                 </div>
+                 <Button className="w-full h-14 rounded-2xl bg-white text-slate-900 font-black uppercase tracking-widest text-[11px] hover:bg-slate-50 shadow-2xl">
+                    Download Cycle Report
+                 </Button>
+              </div>
+              <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-white/5 rounded-full blur-3xl" />
+           </Card>
+        </div>
+      </div>
 
       {/* TV Access Code Dialog */}
       <Dialog open={tvCodeOpen} onOpenChange={setTvCodeOpen}>

@@ -5,6 +5,7 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import AppSidebar from "./components/AppSidebar";
+import { InteractiveBackground } from "./components/InteractiveBackground";
 import { PageTransition } from "./components/PageTransition";
 import LoginPage from "./pages/LoginPage";
 import ForcePasswordResetPage from "./pages/ForcePasswordResetPage";
@@ -25,7 +26,6 @@ import SeatMatrixPage from "./pages/SeatMatrixPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import BatchesPage from "./pages/BatchesPage";
 import ReportsPage from "./pages/ReportsPage";
-import TemplatesPage from "./pages/TemplatesPage";
 import ApplyPage from "./pages/ApplyPage";
 import QueueDisplayPage from "./pages/QueueDisplayPage";
 import DisplayPage from "./pages/DisplayPage";
@@ -58,9 +58,10 @@ function AppRouter() {
   if (user.forcePasswordReset) return <ForcePasswordResetPage />;
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-transparent">
+      <InteractiveBackground />
       <AppSidebar />
-      <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
+      <main className="flex-1 overflow-y-auto pt-14 md:pt-0 relative z-10">
         <PageTransition>
           <Switch>
             <Route path="/" component={DashboardPage} />
@@ -78,7 +79,6 @@ function AppRouter() {
             <Route path="/payments" component={PaymentsPage} />
             <Route path="/batches" component={BatchesPage} />
             <Route path="/reports" component={ReportsPage} />
-            <Route path="/templates" component={TemplatesPage} />
             <Route path="/email-settings" component={EmailSettingsPage} />
             <Route path="/profile" component={ProfilePage} />
             <Route path="/results" component={ResultsPage} />

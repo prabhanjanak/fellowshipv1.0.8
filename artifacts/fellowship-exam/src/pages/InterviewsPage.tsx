@@ -272,20 +272,32 @@ function AdminView({ toast, qc, isCEC }: { toast: ReturnType<typeof import("../h
   ];
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Interviews</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            {doctors.length} doctors · {livePanel.filter((d) => d.isEngaged).length} engaged · {scores.length} scores
-          </p>
-        </div>
-        <div className="flex gap-1.5 flex-wrap">
-          {tabs.map((t) => (
-            <Button key={t.key} variant={activeTab === t.key ? "default" : "outline"} size="sm" onClick={() => setActiveTab(t.key)}>
-              <t.icon className="h-4 w-4 mr-1.5" />{t.label}
-            </Button>
-          ))}
+    <div className="min-h-screen bg-[#fafafa] dark:bg-black p-4 md:p-8 space-y-8 animate-in fade-in duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 p-8 text-white shadow-2xl">
+        <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 to-transparent blur-3xl" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-orange-100 text-sm font-medium">
+              <Stethoscope className="h-4 w-4" />
+              <span>Assessment Cycle</span>
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Interviews & Panels</h1>
+            <p className="text-orange-100/80 max-w-md">Orchestrate interview panels, monitor live session progress, and review faculty assessments.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 bg-black/10 p-1.5 rounded-2xl backdrop-blur-md">
+            {tabs.map((t) => (
+              <Button 
+                key={t.key} 
+                variant={activeTab === t.key ? "default" : "ghost"} 
+                size="sm" 
+                onClick={() => setActiveTab(t.key)}
+                className={`h-10 px-4 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all border-none ${activeTab === t.key ? 'bg-white text-orange-600 shadow-lg' : 'text-orange-50 hover:bg-white/10 hover:text-white'}`}
+              >
+                <t.icon className="h-4 w-4 mr-2" />{t.label}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -416,7 +428,12 @@ function AdminView({ toast, qc, isCEC }: { toast: ReturnType<typeof import("../h
       {/* ── SCORES ── */}
       {activeTab === "scores" && (
         <Card>
-          <CardContent className="p-0">
+          <CardHeader className="pb-0 pt-4 px-4">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Star className="h-4 w-4 text-yellow-500" /> Interview Results Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 mt-4">
             {scores.length === 0 ? (
               <div className="text-center py-16"><Star className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" /><p className="text-muted-foreground">No interview scores yet</p></div>
             ) : (
@@ -425,49 +442,59 @@ function AdminView({ toast, qc, isCEC }: { toast: ReturnType<typeof import("../h
                   <thead className="border-b bg-muted/40">
                     <tr>
                       <th className="text-left px-4 py-3 font-medium text-muted-foreground">Candidate</th>
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Panel / Batch</th>
                       <th className="text-center px-4 py-3 font-medium text-muted-foreground">Avg. Score</th>
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Dr. Breakdown</th>
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date</th>
+                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Doctor Breakdown</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Last Updated</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(() => {
-                      // Group scores by candidate to show average
-                      const grouped: Record<number, any> = {};
-                      scores.forEach((s: any) => {
+                      const grouped: Record<number, { name: string; code: string; scores: ScoreEntry[]; total: number }> = {};
+                      scores.forEach((s) => {
                         if (!grouped[s.candidateId]) {
-                          grouped[s.candidateId] = { 
-                            name: s.candidateName, 
-                            code: s.candidateCode,
-                            scores: [],
-                            totalMarks: s.totalMarks || 100
-                          };
+                          grouped[s.candidateId] = { name: s.candidateName, code: s.candidateCode, scores: [], total: s.totalMarks || 100 };
                         }
-                        grouped[s.candidateId].scores.push(s);
+                        grouped[s.candidateId]!.scores.push(s);
                       });
 
-                      return Object.entries(grouped).map(([cid, data]: [string, any]) => {
-                        const avg = data.scores.reduce((acc: number, s: any) => acc + s.score, 0) / data.scores.length;
+                      return Object.entries(grouped).map(([cid, data]) => {
+                        const avg = data.scores.reduce((acc, s) => acc + s.score, 0) / data.scores.length;
+                        const lastDate = new Date(Math.max(...data.scores.map(s => new Date(s.submittedAt).getTime())));
+                        
                         return (
                           <tr key={cid} className="border-b last:border-0 hover:bg-muted/20">
-                            <td className="px-4 py-3"><p className="font-medium">{data.name}</p><p className="text-xs text-muted-foreground font-mono">{data.code}</p></td>
-                            <td className="px-4 py-3 text-sm text-muted-foreground">Batch Group</td>
+                            <td className="px-4 py-3">
+                              <p className="font-semibold">{data.name}</p>
+                              <p className="text-xs text-muted-foreground font-mono">{data.code}</p>
+                            </td>
                             <td className="px-4 py-3 text-center">
-                              <Badge variant="outline" className="text-lg font-bold text-primary">
-                                {avg.toFixed(1)} / {data.totalMarks}
-                              </Badge>
+                              <div className="flex flex-col items-center">
+                                <span className="text-lg font-bold text-primary">{avg.toFixed(1)}</span>
+                                <span className="text-[10px] text-muted-foreground">out of {data.total}</span>
+                              </div>
                             </td>
                             <td className="px-4 py-3">
-                              <div className="flex flex-col gap-1">
-                                {data.scores.map((s: any) => (
-                                  <div key={s.id} className="text-[10px] text-muted-foreground">
-                                    <span className="font-semibold">{s.doctorName}:</span> {s.score}
+                              <div className="space-y-1.5">
+                                {data.scores.map((s) => (
+                                  <div key={s.id} className="flex items-center gap-2">
+                                    <Badge variant="outline" className="h-5 px-1.5 font-mono text-[10px] bg-background">
+                                      {s.score}
+                                    </Badge>
+                                    <span className="text-xs font-medium text-muted-foreground">{s.doctorName}</span>
+                                    {s.remarks && (
+                                      <span className="text-[10px] italic text-muted-foreground truncate max-w-[150px]" title={s.remarks}>
+                                        — "{s.remarks}"
+                                      </span>
+                                    )}
                                   </div>
                                 ))}
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(data.scores[0].submittedAt).toLocaleDateString("en-IN")}</td>
+                            <td className="px-4 py-3 text-right text-xs text-muted-foreground">
+                              {lastDate.toLocaleDateString("en-IN")}
+                              <br />
+                              {lastDate.toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit' })}
+                            </td>
                           </tr>
                         );
                       });
@@ -772,8 +799,8 @@ function PanelsTab({ toast, qc, candidates }: {
                 <CardContent className="space-y-3">
                   {/* Currently in session */}
                   {currentCandidate ? (
-                    <div className="rounded-lg border-2 border-blue-400 bg-blue-50 dark:bg-blue-950/30 p-3">
-                      <p className="text-[10px] font-semibold text-blue-500 uppercase tracking-wider mb-1">In Session</p>
+                    <div className="rounded-lg border-2 border-orange-400 bg-orange-50 dark:bg-orange-950/30 p-3">
+                      <p className="text-[10px] font-semibold text-orange-500 uppercase tracking-wider mb-1">In Session</p>
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-semibold">{currentCandidate.candidateName}</p>
@@ -784,7 +811,7 @@ function PanelsTab({ toast, qc, candidates }: {
                             </p>
                           )}
                         </div>
-                        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs border-blue-300"
+                        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs border-orange-300 text-orange-700 hover:bg-orange-50"
                           onClick={() => updateQueueMutation.mutate({ panelId: selectedPanel.id, candidateId: currentCandidate.candidateId, status: "done" })}>
                           <CheckCircle2 className="h-3 w-3" /> Done
                         </Button>

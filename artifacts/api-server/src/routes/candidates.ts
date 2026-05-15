@@ -17,13 +17,15 @@ import {
   doctorAssignmentsTable,
   candidateExamAssignmentsTable,
   applicationSubmissionsTable,
-  programsTable,
   documentTemplatesTable,
 } from "@workspace/db";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { sendOfferLetterEmail, sendOfferLetterWithAttachment } from "../lib/email";
 import { processGoogleDocTemplate } from "../lib/google-docs";
-import { emailSettingsTable } from "@workspace/db";
+import { emailSettingsTable, applicationFormsTable, batchesTable, batchCandidatesTable } from "@workspace/db";
+import PDFDocument from "pdfkit";
+import path from "path";
+import fs from "fs/promises";
 
 const router: Router = Router();
 
@@ -565,6 +567,185 @@ router.post("/candidates/:id/generate-document", requireAuth, requireRole("super
   } catch (e: any) {
     console.error("[doc-gen] failed", e);
     res.status(500).json({ error: e.message || "Failed to generate document." });
+  }
+});
+
+// GET /candidates/:id/summary-pdf — Full Summary Report
+router.get("/candidates/:id/summary-pdf", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [c] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, id));
+    if (!c) return res.status(404).json({ error: "Candidate not found" });
+
+    const full = await fullCandidate(c);
+    const [sub] = await db.select().from(applicationSubmissionsTable).where(eq(applicationSubmissionsTable.email, c.email));
+    
+    // Get Batch info
+    const [bc] = await db.select().from(batchCandidatesTable).where(eq(batchCandidatesTable.candidateId, c.id));
+    let batch = null;
+    if (bc) {
+      [batch] = await db.select().from(batchesTable).where(eq(batchesTable.id, bc.batchId));
+    }
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    const filename = `Dossier_${c.fullName.replace(/\s+/g, '_')}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename=${filename}`);
+    doc.pipe(res);
+
+    const colors = {
+      primary: '#0f172a',
+      secondary: '#475569',
+      accent: '#f97316', // Orange
+      muted: '#94a3b8',
+      border: '#e2e8f0',
+      bgOrange: '#fff7ed'
+    };
+
+    // --- Background Accents ---
+    doc.save();
+    doc.fillColor(colors.bgOrange).opacity(0.1);
+    doc.circle(550, 50, 150).fill();
+    doc.circle(50, 750, 100).fill();
+    doc.restore();
+
+    // --- Header ---
+    const logoPath = path.join(process.cwd(), 'artifacts', 'fellowship-exam', 'src', 'assets', 'seh_sav_logo_1777703794142.jpg');
+    try {
+      doc.image(logoPath, 50, 45, { width: 120 });
+    } catch (e) {
+      doc.fillColor(colors.accent).font('Helvetica-Bold').fontSize(16).text("SANKARA ACADEMY OF VISION", 50, 50);
+    }
+
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(18).text("CANDIDATE DOSSIER", 350, 50, { align: 'right' });
+    doc.fillColor(colors.secondary).font('Helvetica').fontSize(10).text(`Protocol ID: ${c.candidateCode}`, 350, 75, { align: 'right' });
+
+    // --- Photo ---
+    const photoUrl = sub?.photoUrl;
+    if (photoUrl && photoUrl.startsWith("/objects/")) {
+      const localPath = path.join(process.cwd(), "uploads", photoUrl.replace("/objects/", ""));
+      try {
+        doc.image(localPath, 460, 110, { width: 90, height: 110 });
+        doc.rect(460, 110, 90, 110).strokeColor(colors.border).lineWidth(1).stroke();
+      } catch (e) {
+        // Skip if photo file missing
+      }
+    }
+
+    doc.moveDown(3);
+
+    // --- Section: Primary Profile ---
+    doc.rect(50, doc.y, 500, 30).fill(colors.bgOrange);
+    doc.fillColor(colors.accent).font('Helvetica-Bold').fontSize(12).text("ACADEMIC IDENTITY & PROFILE", 65, doc.y - 22);
+    doc.moveDown(0.5);
+
+    const leftCol = 70;
+    const rightCol = 320;
+    let currY = doc.y;
+
+    const renderField = (label: string, value: any, x: number, y: number) => {
+      doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(8).text(label.toUpperCase(), x, y);
+      doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(11).text(String(value || "—"), x, y + 12);
+    };
+
+    renderField("Full Name", full.fullName, leftCol, currY);
+    renderField("Contact Identity", full.email, rightCol, currY);
+    currY += 40;
+    renderField("Mobile Registry", full.phone, leftCol, currY);
+    renderField("Academic Year", batch?.name || "JULY 2026 CYCLE", rightCol, currY);
+    currY += 40;
+    renderField("Clinical Segment", c.reviewNotes?.replace("Allocated to ", "") || "Fellowship Track", leftCol, currY);
+    renderField("Reporting Unit", full.unitName || "Pending Allocation", rightCol, currY);
+    doc.moveDown(4);
+
+    // --- Section: Academic & Professional Credentials ---
+    doc.rect(50, doc.y, 500, 20).fill(colors.bgOrange);
+    doc.fillColor(colors.accent).font('Helvetica-Bold').fontSize(10).text("CLINICAL & SURGICAL PEDIGREE", 65, doc.y - 15);
+    doc.moveDown(0.5);
+
+    currY = doc.y;
+    renderField("Degree / Qualification", sub?.degree || c.qualification, leftCol, currY);
+    renderField("Medical College", sub?.medicalCollege || c.collegeName, rightCol, currY);
+    currY += 40;
+    renderField("Medical Council No.", sub?.medicalCouncilNumber, leftCol, currY);
+    renderField("Surgical Experience", sub?.surgicalExperience || "Standard Residency", rightCol, currY);
+    currY += 40;
+    renderField("Total Surgeries", sub?.totalSurgeries, leftCol, currY);
+    renderField("Research / Publications", (sub?.publications ? "PRESENT" : "NONE LISTED"), rightCol, currY);
+    doc.moveDown(5);
+
+    // --- Section: Merit Marksheet ---
+    doc.rect(50, doc.y, 500, 25).fill(colors.primary);
+    doc.fillColor('white').font('Helvetica-Bold').fontSize(10).text("MERIT PERFORMANCE MATRIX", 65, doc.y - 18);
+    doc.moveDown(1);
+
+    const marksTableY = doc.y;
+    doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(9);
+    doc.text("EVALUATION STAGE", 70, marksTableY);
+    doc.text("MAXIMUM", 350, marksTableY);
+    doc.text("OBTAINED", 450, marksTableY);
+    doc.moveDown(0.5);
+    doc.strokeColor(colors.border).lineWidth(1).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown(0.5);
+
+    const renderMarkRow = (label: string, max: number, obtained: any) => {
+      const y = doc.y;
+      doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(10).text(label, 70, y);
+      doc.fillColor(colors.secondary).font('Helvetica').fontSize(10).text(String(max), 350, y);
+      doc.fillColor(colors.accent).font('Helvetica-Bold').fontSize(11).text(obtained != null ? Number(obtained).toFixed(2) : "—", 450, y);
+      doc.moveDown(0.8);
+      doc.strokeColor(colors.border).lineWidth(0.5).moveTo(70, doc.y).lineTo(530, doc.y).stroke();
+      doc.moveDown(0.5);
+    };
+
+    renderMarkRow("MCQ Assessment", batch?.mcqTotalMarks || 50, full.mcqScore);
+    renderMarkRow("Psychometry Profile", batch?.psychometricTotalMarks || 50, full.psychometricScore);
+    renderMarkRow("Clinical Interview", batch?.interviewTotalMarks || 100, full.interviewScore);
+    
+    doc.moveDown(1);
+    doc.rect(400, doc.y, 130, 30).fill(colors.bgOrange);
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(10).text("AGGREGATE", 410, doc.y - 20);
+    doc.fillColor(colors.accent).font('Helvetica-Bold').fontSize(14).text(full.totalScore != null ? full.totalScore.toFixed(2) : "—", 480, doc.y - 23);
+
+    doc.moveDown(4);
+
+    // --- Section: Preferences & LORs ---
+    doc.fillColor(colors.secondary).font('Helvetica-Bold').fontSize(11).text("STRATEGIC PREFERENCES", 50, doc.y);
+    doc.moveDown(0.5);
+    
+    if (full.preferences.length > 0) {
+      full.preferences.forEach((p: any, i: number) => {
+        doc.fillColor(colors.primary).font('Helvetica').fontSize(10).text(`${i+1}. ${p.specialityName}`, { indent: 20 });
+      });
+    } else {
+      doc.fillColor(colors.muted).font('Helvetica').fontSize(10).text("Institutional Choice", { indent: 20 });
+    }
+
+    doc.moveDown(2);
+    doc.fillColor(colors.secondary).font('Helvetica-Bold').fontSize(11).text("PROFESSIONAL REFERENCES (LOR)", 50, doc.y);
+    doc.moveDown(0.5);
+    
+    const renderLOR = (num: number, name: string, contact: string, email: string, status: boolean) => {
+      doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(9).text(`LOR ${num}: ${name || "—"}`, { indent: 20 });
+      doc.fillColor(colors.secondary).font('Helvetica').fontSize(8).text(`Contact: ${contact || "—"} | Email: ${email || "—"}`, { indent: 35 });
+      doc.fillColor(status ? '#10b981' : colors.muted).font('Helvetica-Bold').fontSize(8).text(`STATUS: ${status ? "PROCESSED & VERIFIED" : "PENDING"}`, { indent: 35 });
+      doc.moveDown(0.5);
+    };
+
+    renderLOR(1, sub?.lor1RefName || "", sub?.lor1RefContact || "", sub?.lor1RefEmail || "", !!sub?.lor1Url);
+    renderLOR(2, sub?.lor2RefName || "", sub?.lor2RefContact || "", sub?.lor2RefEmail || "", !!sub?.lor2Url);
+
+    // --- Footer ---
+    const bottom = 750;
+    doc.strokeColor(colors.accent).lineWidth(2).moveTo(50, bottom).lineTo(550, bottom).stroke();
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(8).text("CONFIDENTIAL DOCUMENT - FOR INTERNAL USE ONLY", 50, bottom + 10);
+    doc.text("SANKARA ACADEMY OF VISION - FELLOWSHIP ADMISSIONS HUB", 50, bottom + 22);
+    doc.text(`Generated on ${new Date().toLocaleString()}`, 350, bottom + 10, { align: 'right' });
+
+    doc.end();
+  } catch (e: any) {
+    console.error("[summary-pdf] failed", e);
+    res.status(500).json({ error: e.message || "Failed to generate summary PDF." });
   }
 });
 

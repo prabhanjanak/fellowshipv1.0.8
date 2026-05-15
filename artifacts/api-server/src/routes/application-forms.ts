@@ -482,10 +482,63 @@ router.get(
     });
 
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const colWidths = Object.keys(rows[0] ?? {}).map((k) => ({ wch: Math.max(k.length + 2, 18) }));
-    ws["!cols"] = colWidths;
-    XLSX.utils.book_append_sheet(wb, ws, "Submissions");
+
+    // 1. General Submissions Sheet
+    const wsAll = XLSX.utils.json_to_sheet(rows);
+    const colWidths = Object.keys(rows[0] ?? {}).map((k) => ({ wch: Math.max(k.length + 2, 22) }));
+    wsAll["!cols"] = colWidths;
+    // Set row height for header
+    wsAll["!rows"] = [{ hpt: 30 }]; 
+    XLSX.utils.book_append_sheet(wb, wsAll, "All Submissions");
+
+    // 2. Specialization Specific Sheets
+    const specsFound = new Set<string>();
+    subs.forEach(s => {
+      let sp: any = [];
+      try { sp = JSON.parse(s.specialization ?? "[]"); } catch { sp = s.specialization; }
+      if (Array.isArray(sp)) sp.forEach(item => specsFound.add(String(item)));
+      else if (sp) specsFound.add(String(sp));
+    });
+
+    specsFound.forEach(specName => {
+      const specRows = rows.filter(r => r["Select 1 option from the dropbox"].includes(specName));
+      if (specRows.length > 0) {
+        const wsSpec = XLSX.utils.json_to_sheet(specRows);
+        wsSpec["!cols"] = colWidths;
+        wsSpec["!rows"] = [{ hpt: 25 }];
+        // Sanitize sheet name (max 31 chars, no special chars)
+        const sheetName = specName.replace(/[\\/?*[\]]/g, "").slice(0, 30);
+        XLSX.utils.book_append_sheet(wb, wsSpec, sheetName);
+      }
+    });
+
+    // 3. Application Summary Sheet
+    const summaryRows = subs.map(s => {
+      let specParsed: any = [];
+      try { specParsed = JSON.parse(s.specialization ?? "[]"); } catch { specParsed = s.specialization; }
+      const specString = Array.isArray(specParsed) ? specParsed.join(", ") : (specParsed || "");
+
+      let cpParsed: Record<string, any> = {};
+      try { cpParsed = JSON.parse(s.centerPreference ?? "{}"); } catch { }
+      const centerString = Object.values(cpParsed).map(v => Array.isArray(v) ? v.join(", ") : v).join(" | ");
+
+      return {
+        "Student Name": s.fullName,
+        "Specializations Applied": specString,
+        "Preferred Locations": centerString || s.centerPreference || "Not Specified",
+        "Application Date": s.submittedAt ? new Date(s.submittedAt).toLocaleDateString("en-IN") : "",
+        "Application Time": s.submittedAt ? new Date(s.submittedAt).toLocaleTimeString("en-IN") : "",
+        "Contact Email": s.email,
+        "Contact Phone": s.phone ?? ""
+      };
+    });
+
+    const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+    wsSummary["!cols"] = [
+      { wch: 30 }, { wch: 40 }, { wch: 40 }, { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 20 }
+    ];
+    wsSummary["!rows"] = [{ hpt: 35 }]; // Taller header for summary
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Application Summary");
 
     const safeName = (form?.title ?? `form-${formId}`).replace(/[^a-zA-Z0-9-_]/g, "_").slice(0, 40);
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
@@ -1485,12 +1538,22 @@ router.post(
   async (req, res) => {
     try {
       const body = req.body;
+      
+      // Mandatory fields for manual submission
+      const required = ["fullName", "email", "formId", "paymentId", "paidAmount", "paymentMode"];
+      for (const field of required) {
+        if (!body[field]) {
+          return res.status(400).json({ error: `${field} is required for manual submission` });
+        }
+      }
+
       const subData: any = {
         ...body,
         submittedAt: new Date(),
         source: "admin_manual",
         status: body.status || "pending",
-        readyForReview: true
+        readyForReview: true,
+        paymentUrl: body.paymentId ? `razorpay:${body.paymentId}` : null
       };
 
       // Ensure JSON fields are handled

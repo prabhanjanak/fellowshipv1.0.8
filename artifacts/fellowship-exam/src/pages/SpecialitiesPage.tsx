@@ -50,15 +50,26 @@ export default function SpecialitiesPage() {
   });
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-gray-900">Fellowship Specialities</h1>
-          <p className="text-muted-foreground mt-1 font-medium">Manage the master list of clinical specializations for all application forms.</p>
+    <div className="min-h-screen bg-[#fafafa] dark:bg-black p-4 md:p-8 space-y-8 animate-in fade-in duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 p-8 text-white shadow-2xl">
+        <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 to-transparent blur-3xl" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-orange-100 text-sm font-medium">
+              <Star className="h-4 w-4" />
+              <span>Clinical Domain Master</span>
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Fellowship Specialities</h1>
+            <p className="text-orange-100/80 max-w-md">Manage the master list of clinical specializations, define medical tracks, and update application domain registries.</p>
+          </div>
+          <Button 
+            onClick={() => setCreateOpen(true)} 
+            className="bg-white text-orange-700 hover:bg-orange-50 transition-all font-bold h-12 px-6 rounded-2xl shadow-xl hover:scale-105 active:scale-95 gap-2 border-none"
+          >
+            <Plus className="h-5 w-5" /> Add Speciality
+          </Button>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-orange-600 hover:bg-orange-700 shadow-lg shadow-orange-600/20 gap-2 h-11 px-6">
-          <Plus className="h-4 w-4" /> Add Speciality
-        </Button>
       </div>
 
       {isLoading ? (

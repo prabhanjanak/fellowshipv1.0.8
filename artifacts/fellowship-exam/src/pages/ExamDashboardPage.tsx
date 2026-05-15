@@ -62,7 +62,7 @@ export default function ExamDashboardPage() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <LayoutDashboard className="h-6 w-6 text-primary" />
+            <LayoutDashboard className="h-6 w-6 text-orange-600" />
             {exam.title}
           </h1>
           <p className="text-muted-foreground text-sm mt-1">Exam Performance & Management Dashboard</p>
@@ -94,7 +94,7 @@ export default function ExamDashboardPage() {
         </Card>
         <Card>
           <CardContent className="flex items-center gap-4 pt-6">
-            <div className="p-3 rounded-xl bg-blue-600">
+            <div className="p-3 rounded-xl bg-orange-600 shadow-lg shadow-orange-600/20">
               <Award className="h-5 w-5 text-white" />
             </div>
             <div>
@@ -134,7 +134,7 @@ export default function ExamDashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <Settings className="h-4 w-4 text-primary" />
+                <Settings className="h-4 w-4 text-orange-600" />
                 Administrative Actions
               </CardTitle>
             </CardHeader>
@@ -143,7 +143,7 @@ export default function ExamDashboardPage() {
                 onClick={() => navigate(`/exams?edit=${exam.id}`)}
                 className="flex items-center gap-4 p-3 rounded-lg border bg-card hover:bg-accent hover:text-accent-foreground transition-all text-left group"
               >
-                <div className="p-2 rounded-md bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                <div className="p-2 rounded-md bg-orange-500/10 text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition-colors">
                   <Edit3 className="h-4 w-4" />
                 </div>
                 <div>
@@ -155,7 +155,7 @@ export default function ExamDashboardPage() {
               <button 
                 className="flex items-center gap-4 p-3 rounded-lg border bg-card hover:bg-accent hover:text-accent-foreground transition-all text-left group"
               >
-                <div className="p-2 rounded-md bg-blue-500/10 text-blue-600 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                <div className="p-2 rounded-md bg-amber-500/10 text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors">
                   <Database className="h-4 w-4" />
                 </div>
                 <div>
@@ -167,7 +167,7 @@ export default function ExamDashboardPage() {
               <button 
                 className="flex items-center gap-4 p-3 rounded-lg border bg-card hover:bg-accent hover:text-accent-foreground transition-all text-left group"
               >
-                <div className="p-2 rounded-md bg-emerald-500/10 text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                <div className="p-2 rounded-md bg-orange-500/10 text-orange-600 group-hover:bg-orange-500 group-hover:text-white transition-colors">
                   <FileDown className="h-4 w-4" />
                 </div>
                 <div>

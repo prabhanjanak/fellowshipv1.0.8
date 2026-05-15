@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import {
   CreditCard, Plus, Pencil, Trash2, Building2, Eye, EyeOff, Copy, Check,
-  IndianRupee, Zap, AlertCircle, CheckCircle2, Smartphone,
+  IndianRupee, Zap, AlertCircle, CheckCircle2, Smartphone, MapPin
 } from "lucide-react";
 import QRCode from "react-qr-code";
 import { useToast } from "../hooks/use-toast";
@@ -61,6 +61,14 @@ export default function PaymentsPage() {
   const [showSecret, setShowSecret] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [bankDialogOpen, setBankDialogOpen] = useState(false);
+  const [bankForm, setBankForm] = useState({
+    accountName: "",
+    accountNumber: "",
+    bankBranch: "",
+    ifscCode: "",
+    modes: ""
+  });
 
   const canEdit = user?.role === "super_admin" || user?.role === "program_admin";
 
@@ -73,6 +81,17 @@ export default function PaymentsPage() {
     queryKey: ["programs"],
     queryFn: () => api.get<Program[]>("/programs"),
   });
+
+  const { data: bankSettings = [] } = useQuery<any[]>({
+    queryKey: ["global-settings", "bank_details"],
+    queryFn: () => api.get<any[]>("/global-settings"),
+  });
+
+  const bankDetails = (() => {
+    const s = bankSettings.find(x => x.key === 'bank_details');
+    if (!s) return null;
+    try { return JSON.parse(s.value); } catch { return null; }
+  })();
 
   const saveMutation = useMutation({
     mutationFn: (data: typeof form) =>
@@ -94,6 +113,16 @@ export default function PaymentsPage() {
       toast({ title: "Configuration deleted" });
       qc.invalidateQueries({ queryKey: ["payment-settings"] });
       setDeleteId(null);
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const saveBankMutation = useMutation({
+    mutationFn: (data: typeof bankForm) => api.patch("/global-settings/bank_details", { value: JSON.stringify(data) }),
+    onSuccess: () => {
+      toast({ title: "Bank details updated" });
+      qc.invalidateQueries({ queryKey: ["global-settings"] });
+      setBankDialogOpen(false);
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -140,44 +169,86 @@ export default function PaymentsPage() {
   }, [dialogOpen]);
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">Payments</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Configure Razorpay integration and fee settings</p>
+    <div className="min-h-screen bg-[#fafafa] dark:bg-black p-4 md:p-8 space-y-8 animate-in fade-in duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 p-8 text-white shadow-2xl">
+        <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 to-transparent blur-3xl" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-orange-100 text-sm font-medium">
+              <IndianRupee className="h-4 w-4" />
+              <span>Financial Infrastructure</span>
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Payments & Gateway</h1>
+            <p className="text-orange-100/80 max-w-md">Configure Razorpay integrations, manage fee structures, and update institutional bank transfer protocols.</p>
+          </div>
+          {canEdit && (
+            <Button 
+              onClick={openAdd} 
+              className="bg-white text-orange-700 hover:bg-orange-50 transition-all font-bold h-12 px-6 rounded-2xl shadow-xl hover:scale-105 active:scale-95 gap-2 border-none"
+            >
+              <Plus className="h-5 w-5" /> Add Configuration
+            </Button>
+          )}
         </div>
-        {canEdit && (
-          <Button className="gap-2" onClick={openAdd}>
-            <Plus className="h-4 w-4" /> Add Configuration
-          </Button>
-        )}
       </div>
 
       {/* Bank Transfer Details */}
-      <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-800">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-blue-600" /> Bank Transfer Details
+      <Card className="border-none shadow-premium bg-gradient-to-br from-orange-50 to-amber-50 dark:from-slate-900 dark:to-slate-900/50 overflow-hidden relative group">
+        <div className="absolute top-0 right-0 h-32 w-32 bg-orange-500/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <CardTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
+            <div className="h-10 w-10 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center shadow-sm">
+              <Building2 className="h-5 w-5 text-orange-600" />
+            </div>
+            Institutional Payment Hub
           </CardTitle>
+          {canEdit && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="rounded-xl border-orange-200 bg-white/50 hover:bg-white font-black uppercase text-[10px] tracking-widest gap-2 h-9"
+              onClick={() => {
+                setBankForm({
+                  accountName: bankDetails?.accountName || "Sankara Academy of Vision",
+                  accountNumber: bankDetails?.accountNumber || "50100004642084",
+                  bankBranch: bankDetails?.bankBranch || "HDFC Bank, Saravanampatti Branch, Coimbatore",
+                  ifscCode: bankDetails?.ifscCode || "HDFC0002231",
+                  modes: bankDetails?.modes || "Google Pay · PhonePe · Paytm · RTGS · NEFT",
+                });
+                setBankDialogOpen(true);
+              }}
+            >
+              <Pencil className="h-3 w-3" /> Update Protocol
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 text-sm relative z-10">
             {[
-              ["Account Name", "Sankara Academy of Vision"],
-              ["Account Number", "50100004642084"],
-              ["Bank & Branch", "HDFC Bank, Saravanampatti Branch, Coimbatore"],
-              ["IFSC Code", "HDFC0002231"],
-              ["Accepted Modes", "Google Pay · PhonePe · Paytm · RTGS · NEFT"],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <p className="text-xs text-muted-foreground font-medium">{label}</p>
-                <p className="font-semibold mt-0.5">{value}</p>
+              { label: "Account Name", value: bankDetails?.accountName || "Sankara Academy of Vision", icon: Building2 },
+              { label: "Account Number", value: bankDetails?.accountNumber || "50100004642084", icon: CreditCard },
+              { label: "Bank & Branch", value: bankDetails?.bankBranch || "HDFC Bank, Saravanampatti Branch, Coimbatore", icon: MapPin },
+              { label: "IFSC Code", value: bankDetails?.ifscCode || "HDFC0002231", icon: Zap },
+              { label: "Accepted Modes", value: bankDetails?.modes || "Google Pay · PhonePe · Paytm · RTGS · NEFT", icon: Smartphone },
+            ].map(({ label, value, icon: Icon }) => (
+              <div key={label} className="p-4 bg-white/40 dark:bg-slate-800/40 rounded-2xl border border-white/60 dark:border-slate-700/60 shadow-sm backdrop-blur-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <Icon className="h-3 w-3 text-orange-500 opacity-60" />
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+                </div>
+                <p className="font-black text-slate-800 dark:text-slate-100 tracking-tight leading-tight">{value}</p>
               </div>
             ))}
           </div>
-          <p className="text-xs text-blue-700 dark:text-blue-300 mt-3 bg-blue-100 dark:bg-blue-900/40 rounded p-2">
-            Candidates must upload the payment screenshot in the application form as proof of payment.
-          </p>
+          <div className="mt-6 flex items-center gap-4 p-4 bg-orange-500/10 rounded-2xl border border-orange-500/20 shadow-inner">
+            <div className="h-10 w-10 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20 shrink-0">
+              <Smartphone className="h-5 w-5 text-white" />
+            </div>
+            <p className="text-[11px] font-bold text-orange-800 dark:text-orange-300 uppercase tracking-widest leading-relaxed">
+              Candidates must upload the payment screenshot in the application form as proof of payment.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -224,7 +295,7 @@ export default function PaymentsPage() {
                             </Badge>
                           )}
                           {hasCreds && (
-                            <Badge variant="outline" className="border-blue-300 text-blue-700 gap-1">
+                            <Badge variant="outline" className="border-orange-300 text-orange-700 gap-1">
                               <CheckCircle2 className="h-3 w-3" /> Razorpay Connected
                             </Badge>
                           )}
@@ -463,6 +534,70 @@ export default function PaymentsPage() {
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Bank Details Edit Dialog */}
+      <Dialog open={bankDialogOpen} onOpenChange={setBankDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Update Bank Transfer Protocol
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-1.5">
+              <Label>Account Name</Label>
+              <Input 
+                value={bankForm.accountName} 
+                onChange={e => setBankForm(f => ({ ...f, accountName: e.target.value }))}
+                placeholder="Sankara Academy of Vision"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Account Number</Label>
+              <Input 
+                value={bankForm.accountNumber} 
+                onChange={e => setBankForm(f => ({ ...f, accountNumber: e.target.value }))}
+                placeholder="50100004642084"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Bank & Branch</Label>
+              <Input 
+                value={bankForm.bankBranch} 
+                onChange={e => setBankForm(f => ({ ...f, bankBranch: e.target.value }))}
+                placeholder="HDFC Bank, Saravanampatti Branch, Coimbatore"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>IFSC Code</Label>
+              <Input 
+                value={bankForm.ifscCode} 
+                onChange={e => setBankForm(f => ({ ...f, ifscCode: e.target.value }))}
+                placeholder="HDFC0002231"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Accepted Modes</Label>
+              <Input 
+                value={bankForm.modes} 
+                onChange={e => setBankForm(f => ({ ...f, modes: e.target.value }))}
+                placeholder="Google Pay · PhonePe · Paytm · RTGS · NEFT"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBankDialogOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={() => saveBankMutation.mutate(bankForm)}
+              disabled={saveBankMutation.isPending}
+              className="gap-2 bg-orange-600 hover:bg-orange-700"
+            >
+              {saveBankMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Save Bank Protocol
             </Button>
           </DialogFooter>
         </DialogContent>

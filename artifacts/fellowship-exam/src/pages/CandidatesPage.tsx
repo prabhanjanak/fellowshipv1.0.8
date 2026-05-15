@@ -153,7 +153,7 @@ function ScoreDialog({ candidate, open, onClose }: { candidate: Candidate | null
               </p>
             )}
           </div>
-          <p className="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded p-2">
+          <p className="text-xs text-muted-foreground bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded p-2">
             Interview scores are submitted separately by the panel doctors.
           </p>
         </div>
@@ -427,68 +427,70 @@ export default function CandidatesPage() {
   };
 
   return (
-    <motion.div 
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="p-8 space-y-8"
-    >
-      <div className="flex items-center justify-between gap-6 flex-wrap">
-        <div>
-           <div className="flex items-center gap-2 mb-1">
-              <Badge className="bg-emerald-600 text-white border-none rounded-full px-3 py-0.5 text-[10px] font-black uppercase tracking-widest">
-                 System Active
-              </Badge>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                 <Users className="w-3 h-3" /> Candidate Directory
-              </span>
-           </div>
-           <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Candidates Management</h1>
-           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-2">Showing {filtered.length} of {candidates.length} total profiles</p>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          {canManage && selectedCount > 0 && (
-            <Button variant="destructive" size="sm" className="rounded-xl font-bold px-4 shadow-lg shadow-red-500/20" onClick={() => confirmDelete(allFilteredIds.filter((id) => selected.has(id)))}>
-              <Trash2 className="h-4 w-4 mr-2" /> Delete Selected ({selectedCount})
-            </Button>
-          )}
-          {(isSuperAdmin || isCEC) && (
-            <Button variant="outline" size="sm" className="rounded-xl border-slate-200 font-bold px-4" onClick={openImportDialog}>
-              <Upload className="h-4 w-4 mr-2" /> Import Excel
-            </Button>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); e.target.value = ""; }}
-          />
-          {canManage && (
-            <Button onClick={() => setAddOpen(true)} size="sm" className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 shadow-xl transition-all hover:-translate-y-0.5">
-              <UserPlus className="h-4 w-4 mr-2" /> Add Candidate
-            </Button>
-          )}
+    <div className="min-h-screen bg-[#fafafa] dark:bg-black p-4 md:p-8 space-y-8 animate-in fade-in duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 p-8 text-white shadow-2xl">
+        <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 to-transparent blur-3xl" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-orange-100 text-sm font-medium">
+              <Users className="h-4 w-4" />
+              <span>Candidate Directory</span>
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Candidates Management</h1>
+            <p className="text-orange-100/80 max-w-md">Oversee fellowship applications, track qualification status, and manage interview schedules.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {canManage && selectedCount > 0 && (
+              <Button 
+                variant="destructive" 
+                onClick={() => confirmDelete(allFilteredIds.filter((id) => selected.has(id)))}
+                className="rounded-2xl h-12 px-6 font-bold shadow-xl gap-2"
+              >
+                <Trash2 className="h-4 w-4" /> Delete ({selectedCount})
+              </Button>
+            )}
+            {(isSuperAdmin || isCEC) && (
+              <Button 
+                variant="outline" 
+                onClick={openImportDialog}
+                className="bg-white/10 border-white/20 text-white hover:bg-white/20 rounded-2xl h-12 px-6 font-bold shadow-xl gap-2"
+              >
+                <Upload className="h-4 w-4" /> Import Excel
+              </Button>
+            )}
+            {canManage && (
+              <Button 
+                onClick={() => setAddOpen(true)} 
+                className="bg-white text-orange-700 hover:bg-orange-50 transition-all font-bold h-12 px-6 rounded-2xl shadow-xl hover:scale-105 active:scale-95 gap-2 border-none"
+              >
+                <UserPlus className="h-5 w-5" /> Add Candidate
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-         {[
-           { label: "Active Candidates", value: candidates.length, sub: "In system", color: "blue", icon: <Users className="w-4 h-4" /> },
-           { label: "Approved", value: candidates.filter(c => c.status === 'approved').length, sub: "Ready for exam", color: "emerald", icon: <CheckCircle className="w-4 h-4" /> },
-           { label: "Waitlisted", value: candidates.filter(c => c.status === 'waitlisted').length, sub: "Backup pool", color: "orange", icon: <Clock className="w-4 h-4" /> },
-           { label: "Allocated", value: candidates.filter(c => c.status === 'allocated').length, sub: "Center assigned", color: "indigo", icon: <Building2 className="w-4 h-4" /> }
-         ].map((stat, idx) => (
-           <Card key={idx} className="border-none shadow-premium rounded-3xl p-6 bg-white overflow-hidden relative group">
-              <div className={`absolute top-0 right-0 w-24 h-24 bg-${stat.color}-500/5 rounded-full -mr-12 -mt-12 group-hover:scale-110 transition-transform`}></div>
-              <div className="flex items-center justify-between mb-2">
-                 <p className={`text-[10px] font-black text-${stat.color}-600 uppercase tracking-widest`}>{stat.label}</p>
-                 <div className={`p-2 rounded-xl bg-${stat.color}-50 text-${stat.color}-600`}>{stat.icon}</div>
+      {/* Stats Overview */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Active Candidates", value: candidates.length, icon: Users, color: "orange" },
+          { label: "Approved Applications", value: candidates.filter(c => c.status === 'approved').length, icon: CheckCircle, color: "emerald" },
+          { label: "Waitlisted", value: candidates.filter(c => c.status === 'waitlisted').length, icon: Clock, color: "amber" },
+          { label: "Allocated", value: candidates.filter(c => c.status === 'allocated').length, icon: Building2, color: "orange" }
+        ].map((s, i) => (
+          <Card key={i} className="border-none shadow-sm bg-white dark:bg-zinc-900">
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-2xl bg-${s.color}-50 dark:bg-${s.color}-900/20 flex items-center justify-center text-${s.color}-600 dark:text-${s.color}-400 shadow-inner`}>
+                <s.icon className="h-5 w-5" />
               </div>
-              <p className="text-3xl font-black text-slate-900">{stat.value}</p>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 opacity-70">{stat.sub}</p>
-           </Card>
-         ))}
+              <div>
+                <p className="text-2xl font-bold leading-none">{s.value}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mt-1">{s.label}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <div className="bg-white p-2 rounded-[2rem] shadow-premium flex gap-2 flex-wrap border border-slate-100">
@@ -691,7 +693,7 @@ export default function CandidatesPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-7 gap-1 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                              className="h-7 gap-1 text-xs text-orange-600 border-orange-200 hover:bg-orange-50"
                               onClick={() => window.open(`/api/v2/generate-print/${c.submissionId}?token=${localStorage.getItem("fellowship_token")}`, "_blank")}
                               title="Print Application Form"
                             >
@@ -707,7 +709,7 @@ export default function CandidatesPage() {
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
                           {canManage && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => { setAssignUnitCandidate(c); setAssignUnitId(c.unitId ? String(c.unitId) : ""); }} title="Assign Unit">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-orange-600 hover:text-orange-700 hover:bg-orange-50" onClick={() => { setAssignUnitCandidate(c); setAssignUnitId(c.unitId ? String(c.unitId) : ""); }} title="Assign Unit">
                               <Building2 className="h-3.5 w-3.5" />
                             </Button>
                           )}
@@ -826,7 +828,7 @@ export default function CandidatesPage() {
                   <p className="text-sm font-medium">{importFileName}</p>
                   <p className="text-xs text-muted-foreground">{importTotalRows} data rows detected • {importColumns.length} columns</p>
                 </div>
-                <button type="button" className="text-xs text-blue-600 hover:underline" onClick={() => setImportStep("upload")}>Change file</button>
+                <button type="button" className="text-xs text-orange-600 hover:underline" onClick={() => setImportStep("upload")}>Change file</button>
               </div>
 
               <div className="space-y-1.5">
@@ -945,7 +947,7 @@ export default function CandidatesPage() {
                             href={doc.fileUrl.startsWith("/objects/") ? `/api/storage${doc.fileUrl}` : doc.fileUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                            className="text-xs text-orange-600 hover:underline flex items-center gap-1"
                           >
                             <ExternalLink className="h-3 w-3" /> View
                           </a>
@@ -1030,7 +1032,7 @@ export default function CandidatesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </motion.div>
+    </div>
   );
 }
 

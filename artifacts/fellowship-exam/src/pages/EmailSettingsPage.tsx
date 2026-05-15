@@ -57,13 +57,21 @@ export default function EmailSettingsPage() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6 pb-20">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Email Configuration</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px]">Manage SMTP settings and automated notification triggers.</p>
+    <div className="min-h-screen bg-[#fafafa] dark:bg-black p-4 md:p-8 space-y-8 animate-in fade-in duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 p-8 text-white shadow-2xl">
+        <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 to-transparent blur-3xl" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-orange-100 text-sm font-medium">
+              <Mail className="h-4 w-4" />
+              <span>Communication Infrastructure</span>
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Email Configuration</h1>
+            <p className="text-orange-100/80 max-w-md">Manage institutional SMTP settings, configure notification protocols, and verify automated communication delivery.</p>
+          </div>
+          <MailCheck className="h-16 w-16 text-white/20" />
         </div>
-        <MailCheck className="h-10 w-10 text-primary/20" />
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
@@ -147,13 +155,13 @@ export default function EmailSettingsPage() {
 
       <Separator />
 
-      <Card className="border-blue-100 bg-blue-50/20 shadow-sm">
+      <Card className="border-orange-100 bg-orange-50/20 shadow-sm">
         <CardHeader>
           <div className="flex items-center gap-2">
-            <Send className="h-5 w-5 text-blue-600" />
-            <CardTitle className="text-blue-900 font-black text-sm uppercase tracking-widest">Test Connection</CardTitle>
+            <Send className="h-5 w-5 text-orange-600" />
+            <CardTitle className="text-orange-900 font-black text-sm uppercase tracking-widest">Test Connection</CardTitle>
           </div>
-          <CardDescription className="text-[10px] font-bold uppercase text-blue-700/60">Send a test email to verify your SMTP settings are correct.</CardDescription>
+          <CardDescription className="text-[10px] font-bold uppercase text-orange-700/60">Send a test email to verify your SMTP settings are correct.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-3">
@@ -165,7 +173,7 @@ export default function EmailSettingsPage() {
             />
             <Button 
               variant="secondary" 
-              className="gap-2 bg-blue-600 text-white hover:bg-blue-700 font-black uppercase text-[10px] tracking-widest h-10 px-6" 
+              className="gap-2 bg-orange-600 text-white hover:bg-orange-700 font-black uppercase text-[10px] tracking-widest h-10 px-6" 
               onClick={() => testMutation.mutate(testEmail)}
               disabled={!testEmail || testMutation.isPending}
             >

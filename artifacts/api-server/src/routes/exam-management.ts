@@ -10,8 +10,11 @@ router.get("/batches", requireAuth, async (req: any, res) => {
   try {
     const batches = await db.select().from(batchesTable).where(eq(batchesTable.isMock, req.isMockMode));
     const enriched = await Promise.all(batches.map(async (b) => {
-      const result = await db.execute(sql`SELECT COUNT(*) as count FROM batch_candidates WHERE batch_id = ${b.id}`);
-      return { ...b, candidateCount: Number((result.rows[0] as any).count) };
+      const [{ count }] = await db
+        .select({ count: sql<number>`cast(count(*) as integer)` })
+        .from(batchCandidatesTable)
+        .where(eq(batchCandidatesTable.batchId, b.id));
+      return { ...b, candidateCount: count };
     }));
     res.json(enriched);
   } catch (e) {
@@ -25,6 +28,7 @@ router.post("/batches", requireAuth, requireRole("super_admin", "program_admin",
       ...req.body,
       date: new Date(req.body.date),
       venue: req.body.venue || "SEH, Bangalore",
+      isMock: req.isMockMode || false,
     }).returning();
     res.json(batch);
   } catch (e) {

@@ -25,8 +25,8 @@ export interface User {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
+  constructor(public status: number, public body: any) {
+    super(body.error || body.message || "API Error");
     this.name = "ApiError";
   }
 }
@@ -54,13 +54,22 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(res.status, body.error ?? res.statusText);
+    throw new ApiError(res.status, body);
   }
   return res.json() as Promise<T>;
 }
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  getBlob: (path: string) => {
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${API_BASE}${path}`, { headers }).then(res => {
+      if (!res.ok) throw new Error("Failed to download");
+      return res.blob();
+    });
+  },
   post: <T>(path: string, body: unknown) => request<T>(path, { method: "POST", body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) => request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),

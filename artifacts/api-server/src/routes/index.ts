@@ -29,6 +29,8 @@ import examManagementRouter from "./exam-management";
 import debugRouter from "./debug";
 import tvAccessRouter from "./tv-access";
 import emailSettingsRouter from "./email-settings";
+import globalSettingsRouter from "./global-settings";
+import reportsRouter from "./reports";
 import { db, applicationSubmissionsTable, applicationFormsTable, programsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import PDFDocument from "pdfkit";
@@ -222,5 +224,7 @@ router.use(examManagementRouter);
 router.use(debugRouter);
 router.use(tvAccessRouter);
 router.use(emailSettingsRouter);
+router.use(globalSettingsRouter);
+router.use(reportsRouter);
 
 export default router;

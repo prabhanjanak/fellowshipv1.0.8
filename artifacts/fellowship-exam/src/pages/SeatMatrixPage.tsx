@@ -181,34 +181,53 @@ export default function SeatMatrixPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Grid3x3 className="h-6 w-6" /> Seat Matrix</h1>
-        <p className="text-muted-foreground text-sm mt-0.5">View and manage fellowship seat allocations per program</p>
+    <div className="min-h-screen bg-[#fafafa] dark:bg-black p-4 md:p-8 space-y-8 animate-in fade-in duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 p-8 text-white shadow-2xl">
+        <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 to-transparent blur-3xl" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-orange-100 text-sm font-medium">
+              <Grid3x3 className="h-4 w-4" />
+              <span>Resource Allocation Matrix</span>
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Seat Matrix Command</h1>
+            <p className="text-orange-100/80 max-w-md">Orchestrate fellowship seat distributions, manage institutional capacities, and track recruitment progress across all specialized units.</p>
+          </div>
+          <div className="flex items-center gap-3">
+             <div className="bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10">
+                <span className="text-[10px] font-black text-orange-200 uppercase tracking-widest block mb-1">Matrix Status</span>
+                <Badge className="bg-emerald-500 text-white border-none font-bold text-[10px]">LIVE OPERATIONS</Badge>
+             </div>
+          </div>
+        </div>
       </div>
 
       {/* Program Selector Card */}
-      <Card className="bg-slate-900 text-white border-none shadow-lg">
-        <CardContent className="p-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <Card className="bg-slate-900 text-white border-none shadow-2xl rounded-3xl overflow-hidden relative">
+        <div className="absolute right-0 top-0 h-full w-1/4 bg-gradient-to-l from-white/5 to-transparent pointer-events-none" />
+        <CardContent className="p-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 relative z-10">
             <div className="space-y-1">
-              <h2 className="text-lg font-black uppercase tracking-widest text-slate-400">Program Context</h2>
-              <p className="text-sm font-medium text-slate-300">Select a fellowship program to manage its seat matrix</p>
+              <h2 className="text-xl font-black uppercase tracking-widest text-orange-500">Program Context</h2>
+              <p className="text-sm font-medium text-slate-400">Select a fellowship program to manage its specialized seat distribution matrix.</p>
             </div>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-3 flex-wrap">
               {programs.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => { setSelectedProgramId(p.id); setEditingCell(null); }}
-                  className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 border-2 ${
+                  className={`group relative px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all duration-300 border-2 overflow-hidden ${
                     selectedProgramId === p.id
-                      ? "bg-primary border-primary text-white shadow-[0_0_15px_rgba(234,88,12,0.4)]"
-                      : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                      ? "bg-orange-600 border-orange-500 text-white shadow-xl shadow-orange-900/40 scale-105"
+                      : "bg-slate-800/50 border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-300"
                   }`}
                 >
-                  {p.name}
-                  <span className="block text-[8px] opacity-60 mt-0.5">{p.academicYear}</span>
+                  <span className="relative z-10">{p.name}</span>
+                  <span className="block text-[9px] opacity-60 mt-1 relative z-10">{p.academicYear}</span>
+                  {selectedProgramId === p.id && (
+                    <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent animate-pulse" />
+                  )}
                 </button>
               ))}
             </div>
@@ -537,7 +556,7 @@ export default function SeatMatrixPage() {
                   {matrix.rows.map((row) => (
                     <TableRow key={row.speciality}>
                       <TableCell className="py-2 font-medium">{row.speciality}</TableCell>
-                      <TableCell className="text-center py-2"><Badge variant="outline" className="bg-blue-50 text-blue-700">12</Badge></TableCell>
+                      <TableCell className="text-center py-2"><Badge variant="outline" className="bg-orange-50 text-orange-700">12</Badge></TableCell>
                       <TableCell className="text-center py-2"><Badge variant="outline" className="bg-slate-50">8</Badge></TableCell>
                       <TableCell className="text-center py-2"><Badge variant="outline" className="bg-slate-50">5</Badge></TableCell>
                       <TableCell className="text-center py-2 font-bold">25</TableCell>

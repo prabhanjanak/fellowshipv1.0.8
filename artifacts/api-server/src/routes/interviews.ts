@@ -34,9 +34,19 @@ router.get("/interviews/scores", requireAuth, requireRole("super_admin", "progra
   const scores = await db.select().from(interviewScoresTable);
   const candidates = await db.select().from(candidatesTable);
   const users = await db.select().from(usersTable);
+  
+  // Also get batches to find total marks
+  const { db: workspaceDb, batchesTable } = await import("@workspace/db");
+  const batches = await db.select().from(batchesTable);
+
   res.json(scores.map((s) => {
     const cand = candidates.find((c) => c.id === s.candidateId);
     const doc = users.find((u) => u.id === s.doctorId);
+    
+    // Find batch for this candidate to get total marks
+    // (This is an approximation based on the program)
+    const batch = batches.find(b => b.programId === cand?.programId);
+
     return {
       id: s.id,
       candidateId: s.candidateId,
@@ -45,6 +55,7 @@ router.get("/interviews/scores", requireAuth, requireRole("super_admin", "progra
       doctorId: s.doctorId,
       doctorName: doc?.fullName ?? `#${s.doctorId}`,
       score: s.score,
+      totalMarks: batch?.interviewTotalMarks ?? 100,
       remarks: s.remarks,
       submittedAt: s.submittedAt.toISOString(),
     };

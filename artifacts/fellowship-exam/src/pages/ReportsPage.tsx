@@ -33,7 +33,7 @@ import { Badge } from "../components/ui/badge";
 import { Separator } from "../components/ui/separator";
 import { Button } from "../components/ui/button";
 
-const COLORS = ["#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#f43f5e"];
+const COLORS = ["#f97316", "#fbbf24", "#ea580c", "#fb923c", "#fcd34d", "#78350f"];
 
 export default function ReportsPage() {
   const { data: batches = [], isLoading: loadingBatches } = useQuery({ 
@@ -65,6 +65,30 @@ export default function ReportsPage() {
     avgScore: (Math.random() * 20 + 70).toFixed(1), // Mock avg score for now
   }));
 
+  const downloadCycleReport = async () => {
+    try {
+      const blob = await api.getBlob("/reports/cycle-report");
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `Full_Cycle_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Report download failed:", error);
+    }
+  };
+
+  if (loadingBatches || loadingCandidates) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   const statusData = [
     { name: "Approved", value: approvedCount },
     { name: "Pending", value: candidates.length - approvedCount },
@@ -72,26 +96,31 @@ export default function ReportsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Analytics & Reports</h1>
           <p className="text-muted-foreground">Comprehensive insights into candidate performance and recruitment status.</p>
         </div>
-        <div className="flex gap-2">
-           <Badge variant="outline" className="px-3 py-1 gap-1.5 bg-white shadow-sm">
-             <Filter className="h-3.5 w-3.5" /> Filter Range
-           </Badge>
-           <Badge variant="outline" className="px-3 py-1 gap-1.5 bg-white shadow-sm">
-             <FileText className="h-3.5 w-3.5" /> Export PDF
-           </Badge>
+        <div className="flex gap-4 items-center">
+            <button 
+              onClick={downloadCycleReport}
+              className="inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 hover:scale-[1.02] active:scale-[0.98] border-none min-h-9 px-6 py-2 w-72 h-14 rounded-2xl orange-gradient text-white font-black uppercase tracking-widest text-[11px] shadow-xl shadow-orange-500/20"
+            >
+              <FileText className="h-4 w-4" /> Download Cycle Report
+            </button>
+           <div className="hidden md:flex gap-2">
+              <Badge variant="outline" className="px-3 py-1 gap-1.5 bg-white shadow-sm h-10">
+                <Filter className="h-3.5 w-3.5" /> Filter Range
+              </Badge>
+           </div>
         </div>
       </div>
 
       {/* KPI Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
-          { label: "Total Applications", value: totalCandidates, icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "Active Batches", value: totalBatches, icon: TrendingUp, color: "text-green-600", bg: "bg-green-50" },
+          { label: "Total Applications", value: totalCandidates, icon: Users, color: "text-orange-600", bg: "bg-orange-50" },
+          { label: "Active Batches", value: totalBatches, icon: TrendingUp, color: "text-amber-600", bg: "bg-amber-50" },
           { label: "Final Selections", value: approvedCount, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
           { label: "Completion Rate", value: "84%", icon: Award, color: "text-orange-600", bg: "bg-orange-50" },
         ].map((stat, i) => (
@@ -210,7 +239,7 @@ export default function ReportsPage() {
                   <p className="text-xs text-slate-700 font-medium">Batch #4 requires doctor scores for 12 candidates.</p>
                </div>
                <div className="p-3 bg-white rounded-lg border border-orange-100 flex items-center gap-3">
-                  <Badge className="h-5 bg-blue-500">Notice</Badge>
+                  <Badge className="h-5 bg-orange-400">Notice</Badge>
                   <p className="text-xs text-slate-700 font-medium">6 Offer letters pending template assignment.</p>
                </div>
                <Separator />

@@ -23,7 +23,7 @@ interface CandidateRank {
 
 const statusColors: Record<string, string> = {
   allocated: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  interview_completed: "bg-blue-100 text-blue-800 border-blue-200",
+  interview_completed: "bg-orange-100 text-orange-800 border-orange-200",
   approved: "bg-green-100 text-green-800 border-green-200",
   waitlisted: "bg-purple-100 text-purple-800 border-purple-200",
   rejected: "bg-red-100 text-red-800 border-red-200",
@@ -51,22 +51,32 @@ export default function RankingsPage() {
   const allocatedCount = rankings.filter((r) => r.status === "allocated").length;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Rankings</h1>
-          <p className="text-muted-foreground text-sm mt-1">Merit-based candidate rankings by program</p>
-        </div>
-        {selectedProgram && rankings.length > 0 && (
-          <div className="flex gap-2 text-sm">
-            <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200">
-              {allocatedCount} Allocated
-            </Badge>
-            <Badge variant="outline">
-              {rankings.length - allocatedCount} Pending
-            </Badge>
+    <div className="min-h-screen bg-[#fafafa] dark:bg-black p-4 md:p-8 space-y-8 animate-in fade-in duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 p-8 text-white shadow-2xl">
+        <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 to-transparent blur-3xl" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-orange-100 text-sm font-medium">
+              <Trophy className="h-4 w-4" />
+              <span>Merit Register & Standing</span>
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Candidate Rankings</h1>
+            <p className="text-orange-100/80 max-w-md">Analyze merit-based rankings, track multi-stage examination performance, and manage candidate standing across institutional programs.</p>
           </div>
-        )}
+          {selectedProgram && rankings.length > 0 && (
+            <div className="flex gap-3 bg-black/10 p-4 rounded-2xl backdrop-blur-md">
+              <div className="text-center px-4 border-r border-white/10">
+                <p className="text-[10px] font-black text-orange-200 uppercase tracking-widest">Allocated</p>
+                <p className="text-2xl font-black">{allocatedCount}</p>
+              </div>
+              <div className="text-center px-4">
+                <p className="text-[10px] font-black text-orange-200 uppercase tracking-widest">Waitlisted</p>
+                <p className="text-2xl font-black">{rankings.length - allocatedCount}</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="max-w-xs">

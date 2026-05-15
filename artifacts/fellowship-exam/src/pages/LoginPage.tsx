@@ -33,7 +33,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden bg-gradient-to-br from-[#0b1f3a] via-[#112d54] to-[#0b1f3a]">
+    <div className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden bg-gradient-to-br from-[#1a0f02] via-[#2d1b04] to-[#1a0f02]">
       <ParticleCanvas count={80} color="255, 122, 0" connectionColor="255, 159, 67" maxDistance={140} />
 
       <div className="relative z-10 w-full max-w-md space-y-6">
@@ -41,7 +41,7 @@ export default function LoginPage() {
           <img src={logoUrl} alt="Sankara Eye Foundation" className="h-20 w-auto mx-auto rounded-xl shadow-lg object-contain bg-white p-2" />
           <div>
             <h1 className="text-2xl font-bold text-white drop-shadow">Sankara Academy of Vision</h1>
-            <p className="text-sm text-blue-200 mt-1">Fellowship Exam Management System</p>
+            <p className="text-sm text-orange-200/80 mt-1 font-medium tracking-wide">Fellowship Exam Management System</p>
           </div>
         </div>
 
@@ -80,7 +80,7 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        <p className="text-center text-xs text-blue-300">
+        <p className="text-center text-[10px] font-black uppercase tracking-widest text-orange-200/30">
           Sankara Eye Foundation — Sri Kanchi Kamakoti Medical Trust
         </p>
       </div>

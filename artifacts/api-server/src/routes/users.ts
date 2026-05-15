@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
-import { db, usersTable, unitsTable, programsTable, doctorAssignmentsTable, interviewScoresTable, interviewPanelMembersTable } from "@workspace/db";
+import { db, usersTable, unitsTable, programsTable, doctorAssignmentsTable, interviewScoresTable, interviewPanelMembersTable, applicationFormsTable, candidatesTable } from "@workspace/db";
 import { hashPassword } from "../lib/auth";
 import { requireAuth, requireRole } from "../middleware/auth";
 
@@ -160,24 +160,65 @@ router.delete(
   async (req, res) => {
     const id = Number(req.params["userId"]);
     const callerId = req.user!.userId;
+
     if (id === callerId) {
       res.status(400).json({ error: "Cannot delete your own account" });
       return;
     }
+
     const [target] = await db.select().from(usersTable).where(eq(usersTable.id, id));
-    if (!target) { res.status(404).json({ error: "Not found" }); return; }
+    if (!target) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
     if (target.role === "super_admin") {
       res.status(403).json({ error: "Cannot delete super admin accounts" });
       return;
     }
 
-    // Cascade: remove all doctor assignments, interview scores, and panel memberships for this user
-    await db.delete(interviewPanelMembersTable).where(eq(interviewPanelMembersTable.doctorId, id));
-    await db.delete(doctorAssignmentsTable).where(eq(doctorAssignmentsTable.doctorId, id));
-    await db.delete(interviewScoresTable).where(eq(interviewScoresTable.doctorId, id));
+    console.log(`[delete_user] Starting cleanup for user ${id} (${target.fullName})`);
+    
+    const errors: any[] = [];
+    
+    const safeExec = async (label: string, fn: () => Promise<any>) => {
+      try {
+        console.log(`[delete_user] STEP: ${label}...`);
+        await fn();
+        console.log(`[delete_user] STEP: ${label} DONE`);
+      } catch (e: any) {
+        console.error(`[delete_user] STEP: ${label} FAILED:`, e);
+        errors.push({ step: label, error: e?.message || String(e) });
+      }
+    };
 
-    await db.delete(usersTable).where(eq(usersTable.id, id));
-    res.json({ success: true });
+    await safeExec("doctor_panel_status", () => db.execute(sql`DELETE FROM doctor_panel_status WHERE doctor_id = ${id}`));
+    await safeExec("panel_members", () => db.delete(interviewPanelMembersTable).where(eq(interviewPanelMembersTable.doctorId, id)));
+    await safeExec("assignments", () => db.delete(doctorAssignmentsTable).where(eq(doctorAssignmentsTable.doctorId, id)));
+    await safeExec("scores", () => db.delete(interviewScoresTable).where(eq(interviewScoresTable.doctorId, id)));
+    await safeExec("forms_nullify", () => db.update(applicationFormsTable).set({ createdBy: null }).where(eq(applicationFormsTable.createdBy, id)));
+    await safeExec("candidates_nullify", () => db.update(candidatesTable).set({ userId: null }).where(eq(candidatesTable.userId, id)));
+
+    try {
+      console.log(`[delete_user] Final deletion of user ${id}...`);
+      const result = await db.delete(usersTable).where(eq(usersTable.id, id)).returning();
+      console.log(`[delete_user] Final deletion result:`, result);
+      
+      if (result.length === 0) {
+        res.status(404).json({ error: "User record disappeared during cleanup" });
+        return;
+      }
+
+      res.json({ success: true, cleanupErrors: errors.length > 0 ? errors : undefined });
+    } catch (error: any) {
+      console.error("[delete_user] CRITICAL ERROR on final delete:", error);
+      res.status(500).json({ 
+        error: "Final deletion failed", 
+        details: error?.message || String(error),
+        cleanupErrors: errors,
+        hint: "This usually means a FK constraint is still active."
+      });
+    }
   }
 );
 

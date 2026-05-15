@@ -19,6 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import {
   Table,
   TableBody,
@@ -41,9 +42,17 @@ import {
   MoreVertical,
   Trash2,
   Building2,
+  Grid3x3,
+  MapPin,
+  CheckCircle2,
+  AlertCircle
 } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import { api } from "../lib/api";
+
+const HOURS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
+const MINUTES = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"];
+const PERIODS = ["AM", "PM"];
 
 export default function BatchesPage() {
   const { toast } = useToast();
@@ -53,6 +62,13 @@ export default function BatchesPage() {
   const [viewingBatchId, setViewingBatchId] = useState<number | null>(null);
   const [marksDialogOpen, setMarksDialogOpen] = useState(false);
   const [marksUpdates, setMarksUpdates] = useState<Record<number, { mcq?: string; psych?: string; interview?: string }>>({});
+
+  const [startHour, setStartHour] = useState("09");
+  const [startMin, setStartMin] = useState("00");
+  const [startPeriod, setStartPeriod] = useState("AM");
+  const [endHour, setEndHour] = useState("01");
+  const [endMin, setEndMin] = useState("00");
+  const [endPeriod, setEndPeriod] = useState("PM");
 
   // Queries
   const { data: batches = [], isLoading: isLoadingBatches } = useQuery({
@@ -70,13 +86,18 @@ export default function BatchesPage() {
     queryFn: () => api.get<any[]>("/programs"),
   });
 
+  const { data: units = [] } = useQuery({
+    queryKey: ["units"],
+    queryFn: () => api.get<any[]>("/units"),
+  });
+
   const { data: batchCandidates = [] } = useQuery({
     queryKey: ["batch-candidates", viewingBatchId],
     queryFn: () => api.get<any[]>(`/batches/${viewingBatchId}/candidates`),
     enabled: !!viewingBatchId,
   });
 
-  // Approved candidates not in a batch (simplified for now)
+  // Approved candidates not in a batch
   const approvedCandidates = candidates.filter((c: any) => c.status === "approved" || c.status === "pending");
 
   // Mutations
@@ -87,6 +108,13 @@ export default function BatchesPage() {
       setIsCreateDialogOpen(false);
       toast({ title: "Success", description: "Batch created successfully" });
     },
+    onError: (e: any) => {
+      toast({ 
+        title: "Deployment Failed", 
+        description: e.response?.data?.error || e.message || "An unexpected error occurred", 
+        variant: "destructive" 
+      });
+    }
   });
 
   const assignCandidatesMutation = useMutation({
@@ -123,356 +151,412 @@ export default function BatchesPage() {
   const handleCreateBatch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    
+    const programIdRaw = formData.get("programId");
+    if (!programIdRaw) {
+      toast({ title: "Error", description: "Please select an academic program", variant: "destructive" });
+      return;
+    }
+
     const data = {
       name: formData.get("name"),
       segment: formData.get("segment"),
       date: formData.get("date"),
-      timing: formData.get("timing"),
+      timing: `${startHour}:${startMin} ${startPeriod} - ${endHour}:${endMin} ${endPeriod}`,
       venue: formData.get("venue"),
-      programId: parseInt(formData.get("programId") as string),
-      mcqTotalMarks: parseFloat(formData.get("mcqTotal") as string),
-      psychometricTotalMarks: parseFloat(formData.get("psychTotal") as string),
-      interviewTotalMarks: parseFloat(formData.get("interviewTotal") as string),
+      programId: parseInt(programIdRaw as string),
+      mcqTotalMarks: parseFloat(formData.get("mcqTotal") as string) || 50,
+      psychometricTotalMarks: parseFloat(formData.get("psychTotal") as string) || 50,
+      interviewTotalMarks: parseFloat(formData.get("interviewTotal") as string) || 100,
     };
+
+    if (isNaN(data.programId)) {
+      toast({ title: "Error", description: "Invalid program selected", variant: "destructive" });
+      return;
+    }
+
     createBatchMutation.mutate(data);
   };
 
   if (isLoadingBatches) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="min-h-screen flex items-center justify-center bg-slate-50/50">
+        <div className="flex flex-col items-center gap-6">
+          <Loader2 className="h-16 w-16 animate-spin text-primary opacity-20" />
+          <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.4em] animate-pulse">Initializing Command Center...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Batch Management</h1>
-          <p className="text-muted-foreground">Create and manage candidate batches for exams and interviews.</p>
-        </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" /> Create New Batch
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <form onSubmit={handleCreateBatch}>
-              <DialogHeader>
-                <DialogTitle>Create Examination Batch</DialogTitle>
-                <DialogDescription>
-                  Define the batch details and set the total marks for each component.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Input id="name" name="name" placeholder="July 2026 - Group A" className="col-span-3" required />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="segment" className="text-right">Segment</Label>
-                  <select name="segment" className="col-span-3 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm" required>
-                    <option value="Retina">Retina</option>
-                    <option value="Anterior Segment">Anterior Segment</option>
-                    <option value="General">General</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="date" className="text-right">Exam Date</Label>
-                  <Input id="date" name="date" type="date" className="col-span-3" required />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="timing" className="text-right">Timing</Label>
-                  <Input id="timing" name="timing" placeholder="09:00 AM - 01:00 PM" className="col-span-3" required />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="venue" className="text-right">Venue</Label>
-                  <Input id="venue" name="venue" defaultValue="SEH, Bangalore" className="col-span-3" required />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="programId" className="text-right">Program</Label>
-                  <select name="programId" className="col-span-3 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2" required>
-                    {programs.map((p: any) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="border-t pt-4">
-                  <h4 className="text-sm font-semibold mb-3">Marks Configuration</h4>
-                  <div className="grid grid-cols-3 gap-4">
+    <div className="min-h-screen bg-[#fafafa] dark:bg-black p-4 md:p-8 space-y-8 animate-in fade-in duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 p-8 text-white shadow-2xl">
+        <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 to-transparent blur-3xl" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-orange-100 text-sm font-medium">
+              <Grid3x3 className="h-4 w-4" />
+              <span>Assessment Logistics</span>
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Batch Command Center</h1>
+            <p className="text-orange-100/80 max-w-md">Orchestrate candidate examination flows and specialized clinical interview rotations from a unified administrative matrix.</p>
+          </div>
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button 
+                className="bg-white text-orange-700 hover:bg-orange-50 transition-all font-bold h-12 px-6 rounded-2xl shadow-xl hover:scale-105 active:scale-95 gap-2 border-none"
+              >
+                <Plus className="h-5 w-5" /> Initialize New Batch
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[800px] rounded-[48px] border-none shadow-premium p-12 bg-white max-h-[90vh] overflow-y-auto">
+              <form onSubmit={handleCreateBatch}>
+                <DialogHeader className="mb-10">
+                  <DialogTitle className="text-4xl font-black tracking-tight text-slate-900">Initialize Examination Cluster</DialogTitle>
+                  <DialogDescription className="text-slate-500 font-medium text-lg">
+                    Orchestrate the structural parameters and merit boundaries for this administrative cycle.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-8 py-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-2">
-                      <Label htmlFor="mcqTotal" className="text-xs">MCQ Total</Label>
-                      <Input id="mcqTotal" name="mcqTotal" type="number" defaultValue="50" required />
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Batch Descriptor</Label>
+                      <Input id="name" name="name" placeholder="JULY 2026 - ALPHA CLUSTER" className="h-14 rounded-2xl border-2 border-slate-100 font-bold uppercase placeholder:text-slate-300 focus:border-primary/20 transition-all text-base" required />
+                    </div>
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Speciality Segment</Label>
+                        <select name="segment" className="w-full h-14 rounded-2xl border-2 border-slate-100 bg-white px-4 text-sm font-bold uppercase focus:border-primary/20 transition-all outline-none" required>
+                          <option value="Retina">Retina</option>
+                          <option value="Anterior Segment">Anterior Segment</option>
+                          <option value="Glaucoma">Glaucoma</option>
+                          <option value="Cornea">Cornea</option>
+                          <option value="General">General</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Academic Program</Label>
+                        <select name="programId" className="w-full h-14 rounded-2xl border-2 border-slate-100 bg-white px-4 text-sm font-bold uppercase focus:border-primary/20 transition-all outline-none" required>
+                          {programs.map((p: any) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Clinical Execution Venue</Label>
+                      <select name="venue" className="w-full h-14 rounded-2xl border-2 border-slate-100 bg-white px-4 text-sm font-bold uppercase focus:border-primary/20 transition-all outline-none" required>
+                        <option value="">Select Hospital Unit</option>
+                        {units.map((u: any) => (
+                          <option key={u.id} value={u.name}>{u.name}</option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="psychTotal" className="text-xs">Psych Total</Label>
-                      <Input id="psychTotal" name="psychTotal" type="number" defaultValue="50" required />
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Execution Date</Label>
+                      <Input id="date" name="date" type="date" className="h-14 rounded-2xl border-2 border-slate-100 font-bold focus:border-primary/20 transition-all text-base" required />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="interviewTotal" className="text-xs">Interview Total</Label>
-                      <Input id="interviewTotal" name="interviewTotal" type="number" defaultValue="100" required />
+                  </div>
+
+                  <div className="space-y-4 pt-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Operational Timing</Label>
+                    <div className="grid grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-[32px] border-2 border-slate-100">
+                      {/* Start Time Row */}
+                      <div className="flex flex-col gap-3 p-4 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                         <div className="flex items-center gap-2">
+                            <Clock className="h-3.5 w-3.5 text-orange-600" />
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Starting From</p>
+                         </div>
+                         <div className="grid grid-cols-3 gap-2">
+                            <Select value={startHour} onValueChange={setStartHour}>
+                              <SelectTrigger className="h-10 rounded-xl border-2 border-slate-50 bg-slate-50 font-bold px-2">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {HOURS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Select value={startMin} onValueChange={setStartMin}>
+                              <SelectTrigger className="h-10 rounded-xl border-2 border-slate-50 bg-slate-50 font-bold px-2">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {MINUTES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Select value={startPeriod} onValueChange={setStartPeriod}>
+                              <SelectTrigger className="h-10 rounded-xl border-2 border-orange-100 bg-orange-50 text-orange-700 font-bold px-2">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {PERIODS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                         </div>
+                      </div>
+
+                      {/* End Time Row */}
+                      <div className="flex flex-col gap-3 p-4 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                         <div className="flex items-center gap-2">
+                            <Clock className="h-3.5 w-3.5 text-amber-600" />
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Concluding At</p>
+                         </div>
+                         <div className="grid grid-cols-3 gap-2">
+                            <Select value={endHour} onValueChange={setEndHour}>
+                              <SelectTrigger className="h-10 rounded-xl border-2 border-slate-50 bg-slate-50 font-bold px-2">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {HOURS.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Select value={endMin} onValueChange={setEndMin}>
+                              <SelectTrigger className="h-10 rounded-xl border-2 border-slate-50 bg-slate-50 font-bold px-2">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {MINUTES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Select value={endPeriod} onValueChange={setEndPeriod}>
+                              <SelectTrigger className="h-10 rounded-xl border-2 border-amber-100 bg-amber-50 text-amber-700 font-bold px-2">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {PERIODS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-6 border-t-2 border-slate-50">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-6 block">Merit Threshold Configuration (Max Scores)</Label>
+                    <div className="grid grid-cols-3 gap-8">
+                      <div className="bg-slate-50/50 p-6 rounded-3xl space-y-3 border-2 border-transparent hover:border-orange-200 transition-all">
+                        <Label className="text-xs font-black text-slate-600 uppercase">MCQ Assessment</Label>
+                        <Input name="mcqTotal" type="number" defaultValue="50" className="h-12 rounded-xl border-none shadow-inner font-bold text-lg" />
+                      </div>
+                      <div className="bg-slate-50/50 p-6 rounded-3xl space-y-3 border-2 border-transparent hover:border-amber-200 transition-all">
+                        <Label className="text-xs font-black text-slate-600 uppercase">Psychometric</Label>
+                        <Input name="psychTotal" type="number" defaultValue="50" className="h-12 rounded-xl border-none shadow-inner font-bold text-lg" />
+                      </div>
+                      <div className="bg-slate-50/50 p-6 rounded-3xl space-y-3 border-2 border-transparent hover:border-orange-400 transition-all">
+                        <Label className="text-xs font-black text-slate-600 uppercase">Clinical Interview</Label>
+                        <Input name="interviewTotal" type="number" defaultValue="100" className="h-12 rounded-xl border-none shadow-inner font-bold text-lg" />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-              <DialogFooter>
-                <Button type="submit" disabled={createBatchMutation.isPending}>
-                  {createBatchMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Create Batch
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <DialogFooter className="mt-8">
+                  <Button type="submit" disabled={createBatchMutation.isPending} className="w-full h-14 rounded-[20px] bg-primary text-white font-black uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.01] transition-transform">
+                    {createBatchMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : "Deploy Batch Protocol"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <Card className="border-none shadow-premium bg-white p-8 rounded-[40px] flex flex-col justify-center text-center hover:shadow-2xl transition-all group hover:-translate-y-2 relative overflow-hidden">
+          <div className="absolute -top-10 -right-10 h-32 w-32 bg-indigo-50 rounded-full group-hover:scale-150 transition-transform duration-700" />
+          <div className="h-16 w-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform relative z-10">
+            <Users className="w-8 h-8 text-indigo-500" />
+          </div>
+          <h3 className="text-4xl font-black text-slate-900 tracking-tighter leading-none relative z-10">{batches.length}</h3>
+          <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mt-3 relative z-10">Active Clusters</p>
+        </Card>
+        
+        <Card className="border-none shadow-premium bg-white p-8 rounded-[40px] flex flex-col justify-center text-center hover:shadow-2xl transition-all group hover:-translate-y-2 relative overflow-hidden">
+          <div className="absolute -top-10 -right-10 h-32 w-32 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-700" />
+          <div className="h-16 w-16 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform relative z-10">
+            <ClipboardCheck className="w-8 h-8 text-emerald-500" />
+          </div>
+          <h3 className="text-4xl font-black text-slate-900 tracking-tighter leading-none relative z-10">
+            {candidates.filter((c: any) => c.status === 'completed' || c.status === 'allocated').length}
+          </h3>
+          <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mt-3 relative z-10">Scored Assets</p>
+        </Card>
+
+        <Card className="border-none shadow-premium bg-gradient-to-br from-slate-900 to-slate-800 p-8 rounded-[40px] flex flex-col justify-center text-center hover:shadow-2xl transition-all group hover:-translate-y-2 relative overflow-hidden md:col-span-2">
+          <div className="absolute top-0 right-0 h-40 w-40 bg-white/5 rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-1000" />
+          <div className="flex items-center justify-center gap-10 relative z-10">
+            <div className="text-left">
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2 text-indigo-300">Next Cycle</p>
+              <h3 className="text-3xl font-black text-white tracking-tight leading-none">
+                {batches[0] ? new Date(batches[0].date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'No Pending'}
+              </h3>
+              {batches[0]?.timing && (
+                <div className="flex items-center gap-2 mt-3 px-3 py-1 bg-white/10 rounded-full w-fit">
+                  <Clock className="h-3 w-3 text-indigo-300" />
+                  <p className="text-xs font-black text-white uppercase tracking-wider">{batches[0].timing}</p>
+                </div>
+              )}
+            </div>
+            <div className="h-16 w-[1px] bg-white/10" />
+            <div className="text-left">
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2 text-emerald-300">Target Venue</p>
+              <h3 className="text-xl font-black text-white tracking-tight leading-none uppercase">
+                {batches[0]?.venue || 'Sankara Academy'}
+              </h3>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
         {/* Left Column: Batches List */}
-        <div className="md:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <ClipboardCheck className="h-5 w-5 text-primary" /> Active Batches
+        <div className="lg:col-span-8 space-y-8">
+          <Card className="border-none shadow-premium bg-white rounded-[48px] overflow-hidden">
+            <CardHeader className="p-10 pb-4">
+              <CardTitle className="text-2xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-4">
+                <div className="h-12 w-12 bg-slate-900 rounded-2xl flex items-center justify-center">
+                  <Grid3x3 className="h-6 w-6 text-white" />
+                </div>
+                Active Batch Registries
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Batch Name / Segment</TableHead>
-                    <TableHead>Date / Venue</TableHead>
-                    <TableHead className="text-center">Candidates</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                <TableHeader className="bg-slate-50/50">
+                  <TableRow className="h-16 hover:bg-transparent border-none">
+                    <TableHead className="w-12"></TableHead>
+                    <TableHead className="font-black text-slate-400 text-[11px] uppercase tracking-widest px-6">Batch Identity</TableHead>
+                    <TableHead className="font-black text-slate-400 text-[11px] uppercase tracking-widest px-6 text-center">Schedule</TableHead>
+                    <TableHead className="font-black text-slate-400 text-[11px] uppercase tracking-widest px-6 text-center">Status</TableHead>
+                    <TableHead className="text-right px-10"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {batches.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                        No batches created yet.
+                  {batches.map((batch: any) => (
+                    <TableRow 
+                      key={batch.id} 
+                      className={`h-28 border-b border-slate-50 transition-all cursor-pointer hover:bg-slate-50/50 group ${viewingBatchId === batch.id ? 'bg-primary/5 border-l-4 border-l-primary' : ''}`}
+                      onClick={() => setViewingBatchId(batch.id)}
+                    >
+                      <TableCell className="text-center pl-6">
+                        <div className={`h-12 w-12 rounded-xl flex items-center justify-center font-black text-lg ${viewingBatchId === batch.id ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-primary/10 group-hover:text-primary'}`}>
+                          {batch.name.charAt(0)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-6">
+                        <div className="font-black text-slate-900 uppercase text-lg tracking-tight group-hover:text-primary transition-colors">{batch.name}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest rounded-lg border-slate-200">{batch.segment}</Badge>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                            <Users className="h-3 w-3" /> {batch.candidateCount || 0} Assets
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-6 text-center">
+                        <div className="flex flex-col items-center gap-1.5">
+                          <div className="font-black text-slate-900 text-base uppercase tracking-tighter">
+                            {new Date(batch.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                          </div>
+                          <div className="flex items-center gap-1.5 px-4 py-1.5 bg-orange-50 rounded-full border border-orange-100 shadow-sm">
+                            <Clock className="h-3.5 w-3.5 text-orange-500" />
+                            <span className="text-xs font-extrabold text-orange-700 uppercase tracking-tight">
+                              {batch.timing}
+                            </span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-6 text-center">
+                        <Badge className="bg-emerald-500/10 text-emerald-600 border-none font-black text-[10px] px-4 h-8 rounded-full shadow-sm">OPERATIONAL</Badge>
+                      </TableCell>
+                      <TableCell className="text-right px-10">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-destructive hover:bg-destructive/10 rounded-xl"
+                          onClick={(e) => { e.stopPropagation(); deleteBatchMutation.mutate(batch.id); }}
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    batches.map((batch: any) => (
-                      <TableRow key={batch.id} className="group cursor-pointer hover:bg-muted/50" onClick={() => setViewingBatchId(batch.id)}>
-                        <TableCell>
-                          <div className="font-medium">{batch.name}</div>
-                          <Badge variant="outline" className="text-[10px] mt-1">{batch.segment || "General"}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5 text-sm">
-                            <Calendar className="h-3.5 w-3.5" /> {new Date(batch.date).toLocaleDateString()}
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
-                            <Building2 className="h-3.5 w-3.5" /> {batch.venue || "SEH, Bangalore"}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant="secondary" className="font-mono">
-                            {batch.candidateCount || 0}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="text-blue-600 hover:bg-blue-50"
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                setViewingBatchId(batch.id);
-                                setMarksDialogOpen(true);
-                              }}
-                              title="Enter Offline Marks"
-                            >
-                              <Trophy className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setViewingBatchId(batch.id); }}>
-                              <ArrowRight className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (confirm(`Are you sure you want to delete batch "${batch.name}"?`)) {
-                                  deleteBatchMutation.mutate(batch.id);
-                                }
-                              }}
-                              disabled={deleteBatchMutation.isPending}
-                            >
-                              {deleteBatchMutation.isPending && deleteBatchMutation.variables === batch.id ? 
-                                <Loader2 className="h-4 w-4 animate-spin" /> : 
-                                <Trash2 className="h-4 w-4" />
-                              }
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
+                  ))}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
         </div>
 
-        {/* Right Column: Candidate Assignment */}
-        <div className="space-y-6">
-          <Card className="sticky top-6">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" /> Approved Candidates
-              </CardTitle>
-              <CardDescription>Select students to assign to the current batch.</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="max-h-[500px] overflow-y-auto px-6 pb-6 space-y-2">
-                {approvedCandidates.length === 0 ? (
-                  <p className="text-sm text-center py-8 text-muted-foreground">No approved candidates available.</p>
-                ) : (
-                  approvedCandidates.map((candidate: any) => (
-                    <div key={candidate.id} className="flex items-center space-x-3 p-3 rounded-lg border hover:border-primary/50 transition-colors">
-                      <Checkbox
-                        id={`c-${candidate.id}`}
-                        checked={selectedCandidates.includes(candidate.id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) setSelectedCandidates([...selectedCandidates, candidate.id]);
-                          else setSelectedCandidates(selectedCandidates.filter(id => id !== candidate.id));
-                        }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <Label htmlFor={`c-${candidate.id}`} className="text-sm font-semibold truncate block cursor-pointer">
-                          {candidate.fullName}
-                        </Label>
-                        <p className="text-[10px] text-muted-foreground truncate">{candidate.email}</p>
-                      </div>
+        {/* Right Column: Candidates Selection */}
+        <div className="lg:col-span-4 space-y-8">
+          {viewingBatchId ? (
+            <Card className="border-none shadow-premium bg-white rounded-[40px] overflow-hidden">
+               <CardHeader className="bg-slate-900 p-8">
+                 <CardTitle className="text-white text-xl font-black uppercase tracking-tight flex items-center justify-between">
+                   Asset Allocation
+                   <Badge className="bg-primary text-white border-none font-black text-[10px] px-3">{selectedCandidates.length} Selected</Badge>
+                 </CardTitle>
+                 <CardDescription className="text-slate-400 mt-2 font-medium italic">Assign eligible candidates to the active registry.</CardDescription>
+               </CardHeader>
+               <CardContent className="p-0">
+                 <div className="max-h-[500px] overflow-y-auto">
+                   {approvedCandidates.length === 0 ? (
+                     <div className="p-20 text-center text-slate-300 flex flex-col items-center gap-4">
+                       <Users className="h-12 w-12 opacity-20" />
+                       <p className="text-sm font-black uppercase tracking-widest">No Available Assets</p>
+                     </div>
+                   ) : (
+                    <div className="divide-y divide-slate-50">
+                      {approvedCandidates.map((cand: any) => {
+                        const isAssigned = batchCandidates.some(bc => bc.candidateId === cand.id);
+                        return (
+                          <div key={cand.id} className="p-6 flex items-center justify-between hover:bg-slate-50/50 transition-all group">
+                            <div className="flex items-center gap-4">
+                              <Checkbox 
+                                checked={selectedCandidates.includes(cand.id)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) setSelectedCandidates(prev => [...prev, cand.id]);
+                                  else setSelectedCandidates(prev => prev.filter(id => id !== cand.id));
+                                }}
+                                disabled={isAssigned}
+                                className="h-5 w-5 rounded-lg border-2 border-slate-200 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                              />
+                              <div>
+                                <p className="font-black text-slate-900 uppercase text-sm group-hover:text-primary transition-colors">{cand.fullName}</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{cand.candidateCode}</p>
+                              </div>
+                            </div>
+                            {isAssigned && <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-100 font-black text-[9px] rounded-lg px-2">ASSIGNED</Badge>}
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))
-                )}
+                   )}
+                 </div>
+                 <div className="p-8 bg-slate-50">
+                   <Button 
+                    className="w-full h-14 rounded-2xl bg-slate-900 text-white font-black uppercase tracking-widest shadow-xl shadow-slate-900/20 disabled:opacity-30 transition-all hover:scale-[1.02]"
+                    disabled={selectedCandidates.length === 0}
+                    onClick={() => assignCandidatesMutation.mutate({ batchId: viewingBatchId, candidateIds: selectedCandidates })}
+                   >
+                     Deploy Selection
+                   </Button>
+                 </div>
+               </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-none shadow-premium bg-gradient-to-br from-indigo-50 to-blue-50 p-12 rounded-[40px] text-center flex flex-col items-center justify-center min-h-[400px]">
+              <div className="h-24 w-24 bg-white rounded-[32px] shadow-2xl shadow-indigo-200 flex items-center justify-center mb-8">
+                <Grid3x3 className="h-10 w-10 text-indigo-500 animate-pulse" />
               </div>
-              <div className="p-4 bg-muted/30 border-t">
-                <select
-                  className="w-full mb-3 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  onChange={(e) => setViewingBatchId(parseInt(e.target.value))}
-                  value={viewingBatchId || ""}
-                >
-                  <option value="">Select Target Batch...</option>
-                  {batches.map((b: any) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-                <Button
-                  className="w-full gap-2"
-                  disabled={selectedCandidates.length === 0 || !viewingBatchId || assignCandidatesMutation.isPending}
-                  onClick={() => assignCandidatesMutation.mutate({ batchId: viewingBatchId!, candidateIds: selectedCandidates })}
-                >
-                  {assignCandidatesMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  Add {selectedCandidates.length} to Batch
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-4">Command Inactive</h3>
+              <p className="text-slate-500 font-medium max-w-[240px] mx-auto text-sm">Select a batch registry from the list to initiate candidate allocation protocols.</p>
+            </Card>
+          )}
         </div>
       </div>
-      {/* Offline Marks Entry Dialog */}
-      <Dialog open={marksDialogOpen} onOpenChange={setMarksDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Trophy className="h-5 w-5 text-blue-600" />
-              Enter Offline Marks
-            </DialogTitle>
-            <DialogDescription>
-              Enter evaluation marks for candidates in this batch.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Candidate</TableHead>
-                  <TableHead className="w-24">MCQ</TableHead>
-                  <TableHead className="w-24">Psych</TableHead>
-                  <TableHead className="w-24">Interview</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {batchCandidates.length === 0 ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-4">No candidates in batch</TableCell></TableRow>
-                ) : (
-                  batchCandidates.map((bc: any) => (
-                    <TableRow key={bc.candidateId}>
-                      <TableCell>
-                        <div className="font-medium text-sm">{bc.candidateName}</div>
-                        <div className="text-[10px] text-muted-foreground">{bc.candidateCode}</div>
-                      </TableCell>
-                      <TableCell>
-                        <Input 
-                          type="number" 
-                          className="h-8 text-xs" 
-                          defaultValue={bc.mcqScore ?? ""}
-                          onChange={(e) => setMarksUpdates(prev => ({
-                            ...prev,
-                            [bc.candidateId]: { ...prev[bc.candidateId], mcq: e.target.value }
-                          }))}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input 
-                          type="number" 
-                          className="h-8 text-xs" 
-                          defaultValue={bc.psychometricScore ?? ""}
-                          onChange={(e) => setMarksUpdates(prev => ({
-                            ...prev,
-                            [bc.candidateId]: { ...prev[bc.candidateId], psych: e.target.value }
-                          }))}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input 
-                          type="number" 
-                          className="h-8 text-xs" 
-                          defaultValue={bc.interviewScore ?? ""}
-                          onChange={(e) => setMarksUpdates(prev => ({
-                            ...prev,
-                            [bc.candidateId]: { ...prev[bc.candidateId], interview: e.target.value }
-                          }))}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMarksDialogOpen(false)}>Cancel</Button>
-            <Button 
-              disabled={updateMarksMutation.isPending || batchCandidates.length === 0}
-              onClick={() => {
-                const updates = Object.entries(marksUpdates).map(([cid, vals]) => ({
-                  candidateId: parseInt(cid),
-                  mcqScore: vals.mcq ? parseFloat(vals.mcq) : undefined,
-                  psychometricScore: vals.psych ? parseFloat(vals.psych) : undefined,
-                  interviewScore: vals.interview ? parseFloat(vals.interview) : undefined,
-                }));
-                if (updates.length > 0) {
-                  updateMarksMutation.mutate({ batchId: viewingBatchId!, updates });
-                } else {
-                  setMarksDialogOpen(false);
-                }
-              }}
-            >
-              {updateMarksMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save All Marks
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
-

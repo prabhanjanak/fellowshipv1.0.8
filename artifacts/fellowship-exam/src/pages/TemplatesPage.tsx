@@ -130,17 +130,17 @@ export default function TemplatesPage() {
                   onClick={() => setSelectedProgram(p)}
                   className={cn(
                     "w-full p-4 text-left hover:bg-slate-50 transition-all flex items-center justify-between group border-l-4 border-transparent",
-                    selectedProgram?.id === p.id && "bg-slate-100/50 border-primary"
+                    selectedProgram?.id === p.id && "bg-orange-50 border-orange-500"
                   )}
                 >
                   <div className="space-y-1">
-                    <p className={cn("text-xs font-black uppercase tracking-tight", selectedProgram?.id === p.id ? "text-primary" : "text-slate-700")}>{p.name}</p>
+                    <p className={cn("text-xs font-black uppercase tracking-tight", selectedProgram?.id === p.id ? "text-orange-600" : "text-slate-700")}>{p.name}</p>
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{p.code}</span>
                       <Badge className="h-3 text-[8px] px-1 font-black bg-slate-200 text-slate-500 border-none">{p.academicYear}</Badge>
                     </div>
                   </div>
-                  <ChevronRight className={cn("h-4 w-4 transition-transform", selectedProgram?.id === p.id ? "text-primary translate-x-1" : "text-slate-300 opacity-0 group-hover:opacity-100")} />
+                  <ChevronRight className={cn("h-4 w-4 transition-transform", selectedProgram?.id === p.id ? "text-orange-500 translate-x-1" : "text-slate-300 opacity-0 group-hover:opacity-100")} />
                 </button>
               ))}
             </div>
@@ -151,7 +151,7 @@ export default function TemplatesPage() {
         <div className="p-4 border-t bg-slate-50/50">
           <Button 
             variant="ghost" 
-            className="w-full justify-start gap-3 h-10 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-primary hover:bg-white"
+            className="w-full justify-start gap-3 h-10 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-orange-600 hover:bg-white"
             onClick={() => setSelectedProgram(null)}
           >
             <Settings2 className="h-4 w-4" /> Global API Settings
@@ -160,15 +160,29 @@ export default function TemplatesPage() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-8 space-y-8">
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 animate-in fade-in duration-700">
         {!selectedProgram ? (
-          <div className="max-w-4xl space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div>
-              <h1 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Global API Configuration</h1>
-              <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] mt-1">Configure core Google Cloud credentials for document generation.</p>
+          <div className="space-y-8">
+            {/* Global Header */}
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-800 via-slate-900 to-black p-8 text-white shadow-2xl">
+              <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/5 to-transparent blur-3xl" />
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-slate-400 text-sm font-medium">
+                    <Key className="h-4 w-4" />
+                    <span>Backend Infrastructure</span>
+                  </div>
+                  <h1 className="text-4xl font-extrabold tracking-tight">Global API Configuration</h1>
+                  <p className="text-slate-400 max-w-md">Configure core institutional credentials and Google Cloud service accounts for automated document synthesis.</p>
+                </div>
+                <div className="h-16 w-16 bg-white/5 rounded-2xl flex items-center justify-center border border-white/10 backdrop-blur-md">
+                  <Settings2 className="h-8 w-8 text-white/40" />
+                </div>
+              </div>
             </div>
 
-            <Card className="border-slate-200 shadow-md">
+            <Card className="border-slate-200 shadow-md max-w-4xl">
               <CardHeader className="bg-slate-50/50 border-b">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 bg-amber-100 rounded-xl flex items-center justify-center border border-amber-200">
@@ -203,24 +217,31 @@ export default function TemplatesPage() {
             </Card>
           </div>
         ) : (
-          <div className="max-w-4xl space-y-8 animate-in fade-in slide-in-from-right-2 duration-500">
-            <div className="flex justify-between items-end">
-              <div>
-                <Badge className="bg-primary text-white border-none font-black text-[8px] h-4 mb-2 uppercase tracking-widest">Selected Program</Badge>
-                <h1 className="text-3xl font-black tracking-tight text-slate-900 uppercase">{selectedProgram.name}</h1>
-                <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] mt-1">Manage letter templates for this specific fellowship.</p>
-              </div>
-              <div className="text-right">
-                <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Templates Linked</span>
-                <p className="text-2xl font-black text-slate-900 leading-none">{templates.length}</p>
+          <div className="space-y-8">
+            {/* Program Header */}
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 p-8 text-white shadow-2xl">
+              <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 to-transparent blur-3xl" />
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-orange-100 text-sm font-medium">
+                    <FileText className="h-4 w-4" />
+                    <span>Template Repository</span>
+                  </div>
+                  <h1 className="text-4xl font-extrabold tracking-tight uppercase">{selectedProgram.name}</h1>
+                  <p className="text-orange-100/80 max-w-md">Manage institutional letter templates, offer protocols, and specialized documentation for this fellowship track.</p>
+                </div>
+                <div className="text-right bg-black/10 p-4 rounded-2xl backdrop-blur-md">
+                  <span className="text-[10px] font-black text-orange-200 uppercase tracking-[0.2em]">Templates Linked</span>
+                  <p className="text-4xl font-black text-white leading-none mt-1">{templates.length}</p>
+                </div>
               </div>
             </div>
 
             {/* Template Addition Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card className="md:col-span-1 border-primary/10 bg-primary/5 shadow-none h-fit">
+              <Card className="md:col-span-1 border-orange-200 bg-orange-50 shadow-none h-fit">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                  <CardTitle className="text-[10px] font-black uppercase tracking-widest text-orange-600 flex items-center gap-2">
                     <Plus className="h-3.5 w-3.5" /> Link New Letter
                   </CardTitle>
                 </CardHeader>
@@ -258,7 +279,7 @@ export default function TemplatesPage() {
               <div className="md:col-span-2 space-y-4">
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Available Letter Templates</h3>
                 {isLoadingTpls ? (
-                  <div className="text-center py-12"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>
+                  <div className="text-center py-12"><Loader2 className="h-8 w-8 animate-spin mx-auto text-orange-500" /></div>
                 ) : templates.length === 0 ? (
                   <div className="py-20 text-center border-2 border-dashed rounded-3xl border-slate-200 bg-white shadow-inner">
                     <FileText className="h-12 w-12 text-slate-100 mx-auto mb-3" />
@@ -267,10 +288,10 @@ export default function TemplatesPage() {
                 ) : (
                   <div className="grid grid-cols-1 gap-3">
                     {templates.map(tpl => (
-                      <div key={tpl.id} className="group relative flex items-center justify-between p-4 bg-white border border-slate-200 rounded-2xl hover:shadow-xl hover:border-primary/50 transition-all duration-300 overflow-hidden">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-slate-100 group-hover:bg-primary transition-colors" />
+                      <div key={tpl.id} className="group relative flex items-center justify-between p-4 bg-white border border-slate-200 rounded-2xl hover:shadow-xl hover:border-orange-500/50 transition-all duration-300 overflow-hidden">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-slate-100 group-hover:bg-orange-500 transition-colors" />
                         <div className="flex items-center gap-4">
-                          <div className="h-10 w-10 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center font-black text-sm group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                          <div className="h-10 w-10 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center font-black text-sm group-hover:bg-orange-50 group-hover:text-orange-600 transition-colors">
                             <FileText className="h-5 w-5" />
                           </div>
                           <div>
@@ -279,7 +300,7 @@ export default function TemplatesPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                           <Button variant="ghost" size="sm" className="h-9 w-9 rounded-xl text-slate-400 hover:text-primary hover:bg-primary/5" asChild>
+                           <Button variant="ghost" size="sm" className="h-9 w-9 rounded-xl text-slate-400 hover:text-orange-600 hover:bg-orange-50" asChild>
                               <a href={`https://docs.google.com/document/d/${tpl.googleDocId}`} target="_blank" rel="noreferrer">
                                 <ExternalLink className="h-4 w-4" />
                               </a>

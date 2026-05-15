@@ -15,10 +15,10 @@ import { Switch } from "../components/ui/switch";
 import { Separator } from "../components/ui/separator";
 import {
   Plus, Link2, Copy, Check, Eye, Users, Clock, ChevronRight, ArrowLeft, ExternalLink,
-  FileCheck, FileX, Loader2, Trash2, Download, CreditCard, GripVertical, Settings2, X as XIcon,
+  FileCheck, FileX, Loader2, Trash2, Download, CreditCard, GripVertical, Settings2, X,
   RefreshCw, CheckCheck, Ban, FileText, ImageIcon, ChevronDown, ChevronUp, Building2, Printer,
   Edit3 as Edit, Save, AlertCircle, FileJson, CheckCircle2, LayoutDashboard, CalendarDays,
-  FileSignature, ExternalLink as ExtLink, FileType, CheckCircle
+  FileSignature, ExternalLink as ExtLink, FileType, CheckCircle, UserPlus, MonitorCheck, LayoutGrid, Wallet
 } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group";
 import { motion, AnimatePresence } from "framer-motion";
@@ -672,7 +672,7 @@ function CustomFieldEditor({
                     className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0 transition-opacity"
                     title="Remove option"
                   >
-                    <XIcon className="h-4 w-4" />
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               ))}
@@ -821,7 +821,18 @@ export default function ApplicationFormsPage() {
     email: "",
     phone: "",
     specialization: "",
-    status: "pending"
+    status: "pending",
+    medicalHistory: "",
+    education: "",
+    experience: "",
+    publications: "",
+    lor: "",
+    declaration: true,
+    photoUrl: "",
+    cvUrl: "",
+    paymentId: "",
+    paidAmount: "",
+    paymentMode: "Online"
   });
 
   const createManualSubmission = useMutation({
@@ -830,9 +841,19 @@ export default function ApplicationFormsPage() {
       toast({ title: "Submission created" });
       qc.invalidateQueries({ queryKey: ["submissions", viewFormId] });
       setManualEntryOpen(false);
-      setManualEntryData({ fullName: "", email: "", phone: "", specialization: "", status: "pending" });
+      setManualEntryData({ 
+        fullName: "", email: "", phone: "", specialization: "", status: "pending",
+        medicalHistory: "", education: "", experience: "", publications: "", lor: "",
+        declaration: true, photoUrl: "", cvUrl: "",
+        paymentId: "", paidAmount: "", paymentMode: "Online"
+      });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const { data: specialities = [] } = useQuery<any[]>({
+    queryKey: ["specialities"],
+    queryFn: () => api.get("/specialities"),
   });
 
   const { data: forms = [], isLoading } = useQuery<ApplicationForm[]>({
@@ -1351,13 +1372,18 @@ export default function ApplicationFormsPage() {
 
   // Submissions list view
   if (viewFormId !== null) {
+    const [specFilter, setSpecFilter] = useState<string>("all");
+    
     const filteredSubs = submissions.filter((s) => {
-      if (statusFilter === "all") return true;
-      if (statusFilter === "ready") return s.readyForReview;
-      return s.status === statusFilter;
+      const statusMatch = statusFilter === "all" ? true : (statusFilter === "ready" ? s.readyForReview : s.status === statusFilter);
+      const specMatch = specFilter === "all" ? true : parseSpecializations(s.specialization).includes(specFilter);
+      return statusMatch && specMatch;
     });
 
     const readyCount = submissions.filter((s) => s.readyForReview).length;
+    
+    // Get unique specializations for filter
+    const allSpecs = Array.from(new Set(submissions.flatMap(s => parseSpecializations(s.specialization)))).sort();
 
     const allFilteredSelected = filteredSubs.length > 0 && filteredSubs.every((s) => selectedIds.includes(s.id));
     const toggleSelectAll = () => {
@@ -1411,6 +1437,10 @@ export default function ApplicationFormsPage() {
               {exporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
               Excel Export
             </Button>
+            <Button size="sm" className="rounded-xl orange-gradient text-white border-none shadow-lg shadow-orange-500/20 font-bold px-6 hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={() => setManualEntryOpen(true)}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              Manual Entry
+            </Button>
           </div>
         </div>
 
@@ -1433,22 +1463,38 @@ export default function ApplicationFormsPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
            <div className="flex items-center gap-4 flex-wrap">
             <div className="flex gap-1.5 p-1 bg-slate-100 rounded-2xl w-fit">
-             {(["all", "ready", "pending", "approved", "rejected"] as const).map((f) => (
-               <Button 
-                 key={f} 
-                 size="sm" 
-                 variant={statusFilter === f ? "default" : "ghost"}
-                 className={`rounded-xl text-[10px] font-black uppercase tracking-widest px-4 h-9 ${statusFilter === f ? 'bg-white text-slate-900 shadow-sm hover:bg-white' : 'text-slate-500 hover:text-slate-900'}`}
-                 onClick={() => { setStatusFilter(f); setSelectedIds([]); }}>
-                 {f}
-                 <Badge className="ml-2 bg-slate-200 text-slate-600 border-none group-hover:bg-slate-300">
-                    {f === "all" ? submissions.length : f === "ready" ? readyCount : submissions.filter((s) => s.status === f).length}
-                 </Badge>
-               </Button>
-             ))}
-           </div>
-           
-           {selectedIds.length > 0 && (
+              {(["all", "ready", "pending", "approved", "rejected"] as const).map((f) => (
+                <Button 
+                  key={f} 
+                  size="sm" 
+                  variant={statusFilter === f ? "default" : "ghost"}
+                  className={`rounded-xl text-[10px] font-black uppercase tracking-widest px-4 h-9 ${statusFilter === f ? 'bg-white text-slate-900 shadow-sm hover:bg-white' : 'text-slate-500 hover:text-slate-900'}`}
+                  onClick={() => { setStatusFilter(f); setSelectedIds([]); }}>
+                  {f}
+                  <Badge className="ml-2 bg-slate-200 text-slate-600 border-none group-hover:bg-slate-300">
+                     {f === "all" ? submissions.length : f === "ready" ? readyCount : submissions.filter((s) => s.status === f).length}
+                  </Badge>
+                </Button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 bg-white/50 border border-slate-200 p-1.5 rounded-2xl shadow-sm">
+               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Filter Specialty</span>
+               <Select value={specFilter} onValueChange={setSpecFilter}>
+                 <SelectTrigger className="h-8 min-w-[180px] rounded-xl border-none bg-slate-100 hover:bg-slate-200 transition-all text-[10px] font-black uppercase tracking-widest focus:ring-0">
+                    <SelectValue placeholder="All Specializations" />
+                 </SelectTrigger>
+                 <SelectContent className="rounded-2xl border-slate-100 shadow-2xl">
+                    <SelectItem value="all" className="text-[10px] font-black uppercase tracking-widest">All Specializations</SelectItem>
+                    {allSpecs.map(spec => (
+                      <SelectItem key={spec} value={spec} className="text-[10px] font-black uppercase tracking-widest">{spec}</SelectItem>
+                    ))}
+                 </SelectContent>
+               </Select>
+            </div>
+          </div>
+
+         {selectedIds.length > 0 && (
              <motion.div 
                initial={{ opacity: 0, x: 20 }}
                animate={{ opacity: 1, x: 0 }}
@@ -1482,6 +1528,7 @@ export default function ApplicationFormsPage() {
                   <th className="text-left px-6 py-5 font-black text-slate-400 uppercase tracking-widest text-[10px]">Candidate</th>
                   <th className="text-left px-6 py-5 font-black text-slate-400 uppercase tracking-widest text-[10px]">Applied For</th>
                   <th className="text-left px-6 py-5 font-black text-slate-400 uppercase tracking-widest text-[10px]">Status</th>
+                  <th className="text-left px-6 py-5 font-black text-slate-400 uppercase tracking-widest text-[10px]">Payment Ref</th>
                   <th className="text-left px-6 py-5 font-black text-slate-400 uppercase tracking-widest text-[10px]">Submitted</th>
                   <th className="text-right px-6 py-5 font-black text-slate-400 uppercase tracking-widest text-[10px]">Action</th>
                 </tr>
@@ -1519,6 +1566,9 @@ export default function ApplicationFormsPage() {
                       <Badge className={`${STATUS_COLORS[s.status] ?? "bg-slate-100"} rounded-full px-3 py-0.5 text-[9px] font-black uppercase tracking-widest border-none`}>
                         {s.status}
                       </Badge>
+                    </td>
+                    <td className="px-6 py-5">
+                      <DocValue label="Payment" url={s.paymentUrl || s.paymentId} />
                     </td>
                     <td className="px-6 py-5">
                        <p className="text-xs font-bold text-slate-700">{new Date(s.submittedAt).toLocaleDateString()}</p>
@@ -2046,7 +2096,7 @@ export default function ApplicationFormsPage() {
                                             setEditSectionsConfig(newCfg);
                                           }}
                                         >
-                                          <XIcon className="h-3 w-3" />
+                                          <X className="h-3 w-3" />
                                         </Button>
                                       </div>
                                     ))}
@@ -2279,76 +2329,235 @@ export default function ApplicationFormsPage() {
 
       {/* Manual Entry Dialog */}
       <Dialog open={manualEntryOpen} onOpenChange={setManualEntryOpen}>
-        <DialogContent className="max-w-xl rounded-3xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-black text-slate-900">Manual Entry</DialogTitle>
-            <p className="text-sm text-muted-foreground mt-1">Directly add a candidate submission to this form.</p>
-          </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 py-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Full Name</Label>
-              <Input 
-                value={manualEntryData.fullName} 
-                onChange={e => setManualEntryData({...manualEntryData, fullName: e.target.value})}
-                placeholder="John Doe"
-                className="rounded-xl border-slate-200"
-              />
+        <DialogContent className="max-w-4xl rounded-[40px] p-0 border-none bg-slate-50 overflow-hidden shadow-2xl">
+          <div className="bg-slate-900 p-8 text-white flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className="h-14 w-14 bg-primary/20 rounded-2xl flex items-center justify-center border border-primary/30">
+                <UserPlus className="h-7 w-7 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black uppercase tracking-tight">Administrative Registration</h2>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Manual Candidate Submission Interface</p>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Email Address</Label>
-              <Input 
-                value={manualEntryData.email} 
-                onChange={e => setManualEntryData({...manualEntryData, email: e.target.value})}
-                placeholder="john@example.com"
-                className="rounded-xl border-slate-200"
-              />
+            <Button variant="ghost" onClick={() => setManualEntryOpen(false)} className="text-slate-400 hover:text-white rounded-full h-12 w-12 p-0"><X className="h-6 h-6" /></Button>
+          </div>
+
+          <div className="p-10 space-y-8 max-h-[75vh] overflow-y-auto custom-scrollbar">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Full Identity</Label>
+                <Input 
+                  value={manualEntryData.fullName} 
+                  onChange={e => setManualEntryData({...manualEntryData, fullName: e.target.value})}
+                  placeholder="DR. JOHN DOE"
+                  className="rounded-2xl border-slate-200 h-12 font-black uppercase text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Email Protocol</Label>
+                <Input 
+                  value={manualEntryData.email} 
+                  onChange={e => setManualEntryData({...manualEntryData, email: e.target.value})}
+                  placeholder="CANDIDATE@DOMAIN.COM"
+                  className="rounded-2xl border-slate-200 h-12 font-black uppercase text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Contact Sequence</Label>
+                <Input 
+                  value={manualEntryData.phone} 
+                  onChange={e => setManualEntryData({...manualEntryData, phone: e.target.value})}
+                  placeholder="+91 00000 00000"
+                  className="rounded-2xl border-slate-200 h-12 font-black uppercase text-xs"
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Phone Number</Label>
-              <Input 
-                value={manualEntryData.phone} 
-                onChange={e => setManualEntryData({...manualEntryData, phone: e.target.value})}
-                placeholder="10 digit mobile"
-                className="rounded-xl border-slate-200"
-              />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="space-y-1.5">
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Track Specialization</Label>
+                  <Select 
+                    value={manualEntryData.specialization} 
+                    onValueChange={v => setManualEntryData({...manualEntryData, specialization: v})}
+                  >
+                    <SelectTrigger className="rounded-2xl border-slate-200 h-12 font-black uppercase text-xs">
+                      <SelectValue placeholder="CHOOSE SPECIALIZATION" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl">
+                      {specialities.map(s => (
+                        <SelectItem key={s.id} value={s.name} className="font-bold">{s.name.toUpperCase()}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+               </div>
+               <div className="space-y-1.5">
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Lifecycle Status</Label>
+                  <Select 
+                    value={manualEntryData.status} 
+                    onValueChange={v => setManualEntryData({...manualEntryData, status: v})}
+                  >
+                    <SelectTrigger className="rounded-2xl border-slate-200 h-12 font-black uppercase text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl">
+                      <SelectItem value="pending" className="font-bold">PENDING REVIEW</SelectItem>
+                      <SelectItem value="approved" className="font-bold">APPROVED / ACTIVE</SelectItem>
+                      <SelectItem value="rejected" className="font-bold">REJECTED / INACTIVE</SelectItem>
+                    </SelectContent>
+                  </Select>
+               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</Label>
-              <Select 
-                value={manualEntryData.status} 
-                onValueChange={v => setManualEntryData({...manualEntryData, status: v})}
-              >
-                <SelectTrigger className="rounded-xl border-slate-200">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                </SelectContent>
-              </Select>
+
+            <div className="h-px bg-slate-200" />
+
+            <div className="space-y-4">
+                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 w-fit px-3 py-1 rounded-lg">
+                   <Wallet className="w-3.5 h-3.5" /> Payment Intelligence (Mandatory)
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                   <div className="space-y-1.5">
+                      <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Razorpay Payment ID</Label>
+                      <Input 
+                        value={manualEntryData.paymentId} 
+                        onChange={e => setManualEntryData({...manualEntryData, paymentId: e.target.value})}
+                        placeholder="PAY_XXXXXXXXXXXXXXXX"
+                        className="rounded-2xl border-slate-200 h-12 font-black uppercase text-xs"
+                      />
+                   </div>
+                   <div className="space-y-1.5">
+                      <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Amount Paid (INR)</Label>
+                      <Input 
+                        type="number"
+                        value={manualEntryData.paidAmount} 
+                        onChange={e => setManualEntryData({...manualEntryData, paidAmount: e.target.value})}
+                        placeholder="1000"
+                        className="rounded-2xl border-slate-200 h-12 font-black text-xs"
+                      />
+                   </div>
+                   <div className="space-y-1.5">
+                      <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Payment Mode</Label>
+                      <Select 
+                        value={manualEntryData.paymentMode} 
+                        onValueChange={v => setManualEntryData({...manualEntryData, paymentMode: v})}
+                      >
+                        <SelectTrigger className="rounded-2xl border-slate-200 h-12 font-black uppercase text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-2xl">
+                          <SelectItem value="Online" className="font-bold">Online / Razorpay</SelectItem>
+                          <SelectItem value="GPay / PhonePe" className="font-bold">GPay / PhonePe</SelectItem>
+                          <SelectItem value="Bank Transfer" className="font-bold">Bank Transfer / NEFT</SelectItem>
+                        </SelectContent>
+                      </Select>
+                   </div>
+                </div>
+             </div>
+
+            <div className="h-px bg-slate-200" />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary bg-primary/5 w-fit px-3 py-1 rounded-lg">
+                     <MonitorCheck className="w-3.5 h-3.5" /> Medical History & Qualifications
+                  </div>
+                  <Textarea 
+                    value={manualEntryData.medicalHistory} 
+                    onChange={e => setManualEntryData({...manualEntryData, medicalHistory: e.target.value})}
+                    placeholder="Enter relevant medical background..."
+                    className="rounded-2xl border-slate-200 min-h-[120px] text-xs font-medium"
+                  />
+                  <Textarea 
+                    value={manualEntryData.education} 
+                    onChange={e => setManualEntryData({...manualEntryData, education: e.target.value})}
+                    placeholder="Academic credentials (MBBS, MS/MD)..."
+                    className="rounded-2xl border-slate-200 min-h-[120px] text-xs font-medium"
+                  />
+               </div>
+               <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary bg-primary/5 w-fit px-3 py-1 rounded-lg">
+                     <LayoutGrid className="w-3.5 h-3.5" /> Clinical & Academic Research
+                  </div>
+                  <Textarea 
+                    value={manualEntryData.experience} 
+                    onChange={e => setManualEntryData({...manualEntryData, experience: e.target.value})}
+                    placeholder="Clinical experience & residency details..."
+                    className="rounded-2xl border-slate-200 min-h-[120px] text-xs font-medium"
+                  />
+                  <Textarea 
+                    value={manualEntryData.publications} 
+                    onChange={e => setManualEntryData({...manualEntryData, publications: e.target.value})}
+                    placeholder="Publications, Presentations & Research work..."
+                    className="rounded-2xl border-slate-200 min-h-[120px] text-xs font-medium"
+                  />
+               </div>
             </div>
-            <div className="md:col-span-2 space-y-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Specialization</Label>
-              <Input 
-                value={manualEntryData.specialization} 
-                onChange={e => setManualEntryData({...manualEntryData, specialization: e.target.value})}
-                placeholder='e.g. ["Cornea", "Retina"]'
-                className="rounded-xl border-slate-200 font-mono"
-              />
-              <p className="text-[10px] text-muted-foreground mt-1">Enter as a JSON array or comma-separated list.</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div className="space-y-1.5">
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Letter of Recommendation (LOR)</Label>
+                  <Textarea 
+                    value={manualEntryData.lor} 
+                    onChange={e => setManualEntryData({...manualEntryData, lor: e.target.value})}
+                    placeholder="Paste LOR content or references..."
+                    className="rounded-2xl border-slate-200 min-h-[100px] text-xs font-medium"
+                  />
+               </div>
+               <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Photo Reference URL</Label>
+                    <Input 
+                      value={manualEntryData.photoUrl} 
+                      onChange={e => setManualEntryData({...manualEntryData, photoUrl: e.target.value})}
+                      placeholder="HTTPS://DRIVE.GOOGLE.COM/FILE/..."
+                      className="rounded-2xl border-slate-200 h-10 font-mono text-[10px]"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">CV / Document Link</Label>
+                    <Input 
+                      value={manualEntryData.cvUrl} 
+                      onChange={e => setManualEntryData({...manualEntryData, cvUrl: e.target.value})}
+                      placeholder="HTTPS://DRIVE.GOOGLE.COM/FILE/..."
+                      className="rounded-2xl border-slate-200 h-10 font-mono text-[10px]"
+                    />
+                  </div>
+               </div>
             </div>
           </div>
-          <DialogFooter className="gap-3">
-            <Button variant="ghost" className="rounded-xl font-bold" onClick={() => setManualEntryOpen(false)}>Cancel</Button>
+
+          <div className="p-8 bg-white border-t flex justify-end gap-4 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] relative z-10">
+            <Button variant="ghost" className="rounded-2xl px-10 h-14 font-black uppercase tracking-widest text-[11px] hover:bg-slate-100 transition-all" onClick={() => setManualEntryOpen(false)}>Discard Entry</Button>
             <Button 
-              className="rounded-xl bg-orange-600 hover:bg-orange-700 font-black uppercase tracking-widest text-[10px] h-10 px-6 shadow-orange-200 shadow-lg"
+              className="rounded-2xl bg-slate-900 hover:bg-primary px-12 h-14 font-black uppercase tracking-widest text-[11px] shadow-2xl shadow-slate-900/20 active:scale-95 transition-all gap-3"
               disabled={createManualSubmission.isPending || !manualEntryData.fullName || !manualEntryData.email}
-              onClick={() => createManualSubmission.mutate(manualEntryData)}>
-              {createManualSubmission.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-              Create Submission
+              onClick={() => {
+                if (!manualEntryData.paymentId || !manualEntryData.paidAmount) {
+                  toast({ title: "Missing Information", description: "Payment ID and Amount are mandatory for manual submission.", variant: "destructive" });
+                  return;
+                }
+                
+                // Map frontend names to DB schema names before mutation
+                const dbPayload = {
+                  ...manualEntryData,
+                  medicalConditions: manualEntryData.medicalHistory,
+                  pgQualifications: manualEntryData.education,
+                  surgicalExperience: manualEntryData.experience,
+                  publications: manualEntryData.publications,
+                  lor1Url: manualEntryData.lor,
+                  photoUrl: manualEntryData.photoUrl,
+                  paymentUrl: manualEntryData.cvUrl, // Re-purposing for CV link
+                  paymentId: manualEntryData.paymentId,
+                  paidAmount: parseInt(manualEntryData.paidAmount),
+                  paymentMode: manualEntryData.paymentMode,
+                  declarationAccepted: true
+                };
+                createManualSubmission.mutate(dbPayload);
+              }}>
+              {createManualSubmission.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+              Commit Submission to Registry
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 

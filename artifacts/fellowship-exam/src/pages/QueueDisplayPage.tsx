@@ -68,7 +68,7 @@ export default function QueueDisplayPage() {
       <div className="h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="bg-white p-12 rounded-[2.5rem] shadow-2xl w-full max-w-md border border-slate-200">
           <div className="text-center mb-10">
-            <ShieldCheck size={64} className="text-primary mx-auto mb-4" />
+            <ShieldCheck size={64} className="text-orange-600 mx-auto mb-4" />
             <h1 className="text-3xl font-black text-slate-900 uppercase">Board Terminal</h1>
             <p className="text-slate-400 font-bold">Secure access required for sync.</p>
           </div>
@@ -83,7 +83,7 @@ export default function QueueDisplayPage() {
               className="h-20 text-center text-5xl font-black tracking-[0.4em] rounded-2xl bg-slate-50 border-2 border-slate-200"
             />
             {error && <p className="text-red-500 font-bold text-center uppercase text-xs">{error}</p>}
-            <Button type="submit" disabled={verifying || accessCode.length < 6} className="w-full h-16 text-xl font-black uppercase rounded-2xl shadow-lg">
+            <Button type="submit" disabled={verifying || accessCode.length < 6} className="w-full h-16 text-xl font-black uppercase rounded-2xl shadow-lg bg-orange-600 hover:bg-orange-500">
               {verifying ? "Syncing..." : "Connect Display"}
             </Button>
           </form>
@@ -95,7 +95,7 @@ export default function QueueDisplayPage() {
   if (isLoadingPanels) {
     return (
       <div className="h-screen bg-white flex items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <Loader2 className="h-12 w-12 animate-spin text-orange-600" />
       </div>
     );
   }
@@ -126,7 +126,7 @@ export default function QueueDisplayPage() {
 
         <div className="flex items-center gap-10 flex-shrink-0">
           <div className="flex items-center gap-4 bg-slate-900 text-white px-8 py-4 rounded-3xl shadow-xl shadow-slate-900/20">
-             <Clock size={32} className="text-primary" />
+             <Clock size={32} className="text-orange-500" />
              <span className="text-5xl font-black tabular-nums tracking-tight leading-none">
                 {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
              </span>
@@ -140,7 +140,7 @@ export default function QueueDisplayPage() {
         {/* LARGE, CLEAR TABLE HEADERS */}
         <div className="flex w-full items-center px-8 py-5 bg-slate-100/50 rounded-2xl shrink-0 border border-slate-100 mb-4">
           <div className="w-[25%] flex-shrink-0 px-4 text-lg lg:text-xl font-black uppercase tracking-widest text-slate-500">Room Station</div>
-          <div className="w-[30%] flex-shrink-0 px-4 text-lg lg:text-xl font-black uppercase tracking-widest text-primary flex items-center gap-2">
+          <div className="w-[30%] flex-shrink-0 px-4 text-lg lg:text-xl font-black uppercase tracking-widest text-orange-600 flex items-center gap-2">
             <UserCheck size={24} /> Currently Inside
           </div>
           <div className="w-[18%] flex-shrink-0 px-4 text-lg lg:text-xl font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
@@ -225,9 +225,9 @@ export default function QueueDisplayPage() {
       </main>
 
       {/* 3. PREMIUM ANNOUNCEMENT FOOTER */}
-      <footer className="h-[80px] bg-primary flex items-center shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-10">
+      <footer className="h-[80px] bg-orange-600 flex items-center shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-10">
          <div className="h-full px-12 bg-slate-900 flex items-center gap-4 text-white font-black text-2xl uppercase italic z-20 shadow-2xl relative border-r-4 border-white/10">
-            <Info size={32} className="text-primary" />
+            <Info size={32} className="text-orange-400" />
             ATTENTION
          </div>
          <div className="flex-1 overflow-hidden relative">

@@ -10,7 +10,7 @@ import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Alert, AlertDescription } from "../components/ui/alert";
-import { Search, UserPlus, Building2, Edit2, Trash2, KeyRound, BadgeCheck } from "lucide-react";
+import { Search, UserPlus, Building2, Edit2, Trash2, KeyRound, BadgeCheck, Loader2, ShieldCheck } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import { RoleAvatar } from "../components/RoleAvatar";
 
@@ -62,6 +62,8 @@ const EMPTY_FORM = {
   designation: "", gender: "", avatarSeed: "",
   role: "unit_coordinator", unitId: "",
 };
+
+const allRoles = Object.keys(roleLabel);
 
 export default function UsersPage() {
   const { user: me } = useAuth();
@@ -120,7 +122,16 @@ export default function UsersPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.delete(`/users/${id}`),
     onSuccess: () => { toast({ title: "User deleted" }); qc.invalidateQueries({ queryKey: ["users"] }); setDeleteUser(null); },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: any) => {
+      const msg = e.body?.error || e.message || "Unknown error";
+      const det = e.body?.details ? `\n\nDEBUG: ${e.body.details}` : "";
+      const hint = e.body?.hint ? `\n\nHINT: ${e.body.hint}` : "";
+      toast({ 
+        title: "CRITICAL: Deletion Failed", 
+        description: `${msg}${det}${hint}`, 
+        variant: "destructive" 
+      });
+    },
   });
 
   const resetMutation = useMutation({
@@ -130,7 +141,6 @@ export default function UsersPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const allRoles = Array.from(new Set(users.map((u) => u.role))).sort();
   const filtered = users.filter((u) => {
     const matchSearch =
       u.fullName.toLowerCase().includes(search.toLowerCase()) ||
@@ -146,120 +156,159 @@ export default function UsersPage() {
   const isFormValid = form.fullName && form.email && form.employeeId && form.designation && form.gender && form.unitId && form.role;
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">Users</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">{filtered.length} of {users.length} users</p>
+    <div className="min-h-screen bg-[#fafafa] dark:bg-black p-4 md:p-8 space-y-8 animate-in fade-in duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 p-8 text-white shadow-2xl">
+        <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 to-transparent blur-3xl" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-orange-100 text-sm font-medium">
+              <ShieldCheck className="h-4 w-4" />
+              <span>Institutional Directory</span>
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Personnel Registry</h1>
+            <p className="text-orange-100/80 max-w-md">Manage active stakeholders, medical faculty, and fellowship coordinators across the Sankara network.</p>
+          </div>
+          {isSuperAdmin && (
+            <Button 
+              onClick={() => setAddOpen(true)} 
+              className="bg-white text-orange-700 hover:bg-orange-50 transition-all font-bold h-12 px-6 rounded-2xl shadow-xl hover:scale-105 active:scale-95 gap-2 border-none"
+            >
+              <UserPlus className="h-5 w-5" /> Provision New Account
+            </Button>
+          )}
         </div>
-        <Button onClick={() => setAddOpen(true)} className="gap-2">
-          <UserPlus className="h-4 w-4" /> Add User
-        </Button>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by name, email, employee ID, designation or unit…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "System Admins", value: users.filter(u => u.role.includes('admin')).length, icon: ShieldCheck, color: "orange" },
+          { label: "Unit Coordinators", value: users.filter(u => u.role === 'unit_coordinator').length, icon: Building2, color: "orange" },
+          { label: "Medical Faculty", value: users.filter(u => u.role === 'doctor').length, icon: BadgeCheck, color: "emerald" },
+          { label: "Active Fellows", value: users.filter(u => u.role === 'student').length, icon: UserPlus, color: "amber" },
+        ].map((s, i) => (
+          <Card key={i} className="border-none shadow-sm bg-white dark:bg-zinc-900">
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-2xl bg-${s.color}-50 dark:bg-${s.color}-900/20 flex items-center justify-center text-${s.color}-600 dark:text-${s.color}-400 shadow-inner`}>
+                <s.icon className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold leading-none">{s.value}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mt-1">{s.label}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Filter Bar */}
+      <div className="flex flex-col md:flex-row gap-4 items-center">
+        <div className="relative flex-1 group w-full">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+          <Input 
+            placeholder="Search by name, email, or institutional ID..." 
+            value={search} 
+            onChange={(e) => setSearch(e.target.value)} 
+            className="pl-12 h-12 rounded-xl border-none bg-white shadow-sm font-medium focus:ring-2 focus:ring-orange-500" 
+          />
         </div>
         <Select value={roleFilter} onValueChange={setRoleFilter}>
-          <SelectTrigger className="w-52"><SelectValue placeholder="All roles" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All roles</SelectItem>
-            {allRoles.map((r) => <SelectItem key={r} value={r}>{roleLabel[r] ?? r}</SelectItem>)}
+          <SelectTrigger className="w-full md:w-64 h-12 rounded-xl border-none bg-white shadow-sm font-bold uppercase text-[11px] tracking-widest px-6">
+            <SelectValue placeholder="Filter by Role" />
+          </SelectTrigger>
+          <SelectContent className="rounded-xl shadow-2xl border-none">
+            <SelectItem value="all" className="font-bold text-[11px] uppercase">All Personnel</SelectItem>
+            {allRoles.map((r) => <SelectItem key={r} value={r} className="font-bold text-[11px] uppercase">{roleLabel[r] ?? r}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12 text-muted-foreground">Loading users…</div>
+        <div className="flex flex-col items-center justify-center py-32 space-y-6">
+           <div className="relative">
+             <div className="absolute inset-0 bg-orange-500 blur-2xl opacity-20 animate-pulse" />
+             <Loader2 className="h-12 w-12 animate-spin text-orange-500 relative z-10" />
+           </div>
+           <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em]">Decrypting Personnel Database...</p>
+        </div>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b bg-muted/40">
-                  <tr>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Designation</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Email</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Emp ID</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Role</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Unit</th>
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((u) => (
-                    <tr key={u.id} className="border-b last:border-0 hover:bg-muted/20">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <RoleAvatar role={u.role} size="sm" />
-                          <div>
-                            <p className="font-medium">{displayName(u)}</p>
-                            {u.forcePasswordReset && (
-                              <span className="text-[10px] text-amber-600 font-medium">⚠ Pending reset</span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">{u.designation ?? "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">{u.email}</td>
-                      <td className="px-4 py-3">
-                        {u.employeeId ? (
-                          <span className="flex items-center gap-1 text-xs font-mono text-primary">
-                            <BadgeCheck className="h-3 w-3 shrink-0" />{u.employeeId}
-                          </span>
-                        ) : <span className="text-xs text-muted-foreground">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge className={roleColors[u.role] ?? "bg-gray-100 text-gray-800"} variant="secondary">
-                          {roleLabel[u.role] ?? u.role}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        {u.unitName ? (
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Building2 className="h-3 w-3 shrink-0" />{u.unitName}
-                          </span>
-                        ) : <span className="text-xs text-muted-foreground">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant={u.active ? "default" : "secondary"} className="text-[10px]">
-                          {u.active ? "Active" : "Disabled"}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {isSuperAdmin && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Reset password"
-                              onClick={() => { setResetUser(u); setResetPw("Welcome@123"); }}>
-                              <KeyRound className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Edit"
-                            onClick={() => setEditUser(u)}>
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                          {u.role !== "super_admin" && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
-                              title="Delete" onClick={() => setDeleteUser(u)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {filtered.length === 0 && (
-                    <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No users found</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="px-4 space-y-4">
+           {filtered.map((u) => (
+             <Card key={u.id} className="group rounded-[32px] border-none bg-white shadow-sm hover:shadow-xl transition-all duration-500 overflow-hidden">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between p-6 gap-8">
+                   <div className="flex items-center gap-6 xl:w-[350px]">
+                      <div className="relative">
+                         <RoleAvatar role={u.role} size="lg" showRing />
+                         <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-4 border-white ${u.active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                      </div>
+                      <div className="space-y-1">
+                         <h4 className="text-xl font-black text-slate-900 tracking-tight leading-none italic uppercase">
+                            {displayName(u)}
+                         </h4>
+                         <div className="flex items-center gap-2">
+                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{u.email}</p>
+                            {u.forcePasswordReset && <Badge className="bg-amber-50 text-amber-600 border-amber-100 text-[8px] h-4 px-2 uppercase font-black">RESET REQ</Badge>}
+                         </div>
+                      </div>
+                   </div>
+
+                   <div className="grid grid-cols-2 md:grid-cols-4 flex-1 gap-6">
+                      <div className="space-y-1">
+                         <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Faculty Role</p>
+                         <Badge className={`rounded-full px-4 h-7 font-black uppercase text-[9px] tracking-widest ${roleColors[u.role] ?? "bg-slate-100 text-slate-800"}`} variant="secondary">
+                           {roleLabel[u.role] ?? u.role}
+                         </Badge>
+                      </div>
+                      <div className="space-y-1">
+                         <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Hospital Unit</p>
+                         <div className="flex items-center gap-2 text-slate-600">
+                            <Building2 className="h-4 w-4 text-orange-500/40" />
+                            <span className="text-[11px] font-black uppercase tracking-tight">{u.unitName || "Not Assigned"}</span>
+                         </div>
+                      </div>
+                      <div className="space-y-1">
+                         <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Institutional ID</p>
+                         <div className="flex items-center gap-2 text-slate-600">
+                            <BadgeCheck className="h-4 w-4 text-emerald-500/40" />
+                            <span className="text-[11px] font-black font-mono tracking-tighter">{u.employeeId || "—"}</span>
+                         </div>
+                      </div>
+                      <div className="space-y-1">
+                         <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Designation</p>
+                         <p className="text-[11px] font-black text-slate-500 uppercase tracking-tight truncate max-w-[150px]">{u.designation || "—"}</p>
+                      </div>
+                   </div>
+
+                   <div className="flex items-center justify-end gap-3 shrink-0">
+                      {isSuperAdmin && (
+                        <Button variant="outline" size="icon" className="h-12 w-12 rounded-2xl border-slate-100 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 transition-all" title="Reset Credentials"
+                          onClick={() => { setResetUser(u); setResetPw("Welcome@123"); }}>
+                          <KeyRound className="h-5 w-5" />
+                        </Button>
+                      )}
+                      <Button variant="outline" size="icon" className="h-12 w-12 rounded-2xl border-slate-100 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 transition-all" title="Modify Registry"
+                        onClick={() => setEditUser(u)}>
+                        <Edit2 className="h-5 w-5" />
+                      </Button>
+                      {u.role !== "super_admin" && (
+                        <Button variant="outline" size="icon" className="h-12 w-12 rounded-2xl border-slate-100 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all"
+                          title="Purge Account" onClick={() => setDeleteUser(u)}>
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      )}
+                   </div>
+                </div>
+                <div className={`h-1.5 w-full ${u.active ? 'bg-emerald-500/50' : 'bg-slate-200'}`} />
+             </Card>
+           ))}
+           {filtered.length === 0 && (
+             <div className="flex flex-col items-center justify-center py-20 bg-white rounded-[40px] border-2 border-dashed border-slate-100">
+                <Search className="h-12 w-12 text-slate-200 mb-4" />
+                <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">No personnel records match your query</p>
+             </div>
+           )}
+        </div>
       )}
 
       {/* Add User Dialog */}

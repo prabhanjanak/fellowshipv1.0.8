@@ -131,19 +131,10 @@ export default function ProgramsPage() {
                     <Badge className="bg-slate-900 text-white border-none font-black text-[10px]">{p.academicYear}</Badge>
                     {canManage && (
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-8 w-8 p-0 text-amber-600 hover:bg-amber-50"
-                          onClick={() => setTemplateManager(p)}
-                          title="Manage Letter Templates"
-                        >
-                          <Link2 className="h-4 w-4" />
-                        </Button>
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          className="h-8 w-8 p-0 text-primary hover:bg-primary/5"
+                          className="h-8 w-8 p-0 text-orange-600 hover:bg-orange-50"
                           onClick={() => setEditProgram(p)}
                         >
                           <Edit2 className="h-4 w-4" />
@@ -182,13 +173,9 @@ export default function ProgramsPage() {
                 </div>
                 
                 <div className="flex items-center justify-between border-t pt-4 border-slate-100">
-                  <Button 
-                    variant="link" 
-                    className="p-0 h-auto text-[10px] font-black uppercase text-primary tracking-widest flex items-center gap-1.5"
-                    onClick={() => setTemplateManager(p)}
-                  >
-                    <FileText className="h-3.5 w-3.5" /> Configure Letter Templates
-                  </Button>
+                  <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5" /> Program Configured
+                  </div>
                   <code className="text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-0.5 rounded tracking-widest">{p.code}</code>
                 </div>
               </CardContent>
@@ -196,88 +183,6 @@ export default function ProgramsPage() {
           ))}
         </div>
       )}
-
-      {/* Template Manager Dialog */}
-      <Dialog open={!!templateManager} onOpenChange={() => setTemplateManager(null)}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="font-black text-xl uppercase tracking-tight flex items-center gap-2">
-              <Link2 className="h-5 w-5 text-amber-500" />
-              Document Template Center
-            </DialogTitle>
-            <DialogDescription className="font-bold text-xs uppercase text-slate-400">Manage multiple letter types for {templateManager?.name}</DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-6 py-4">
-            {/* Add New Template Form */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Add New Letter Template</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] font-black uppercase text-slate-400">Letter Name</Label>
-                  <Input 
-                    placeholder="e.g. Fellowship Offer Letter" 
-                    value={tplForm.name} 
-                    onChange={e => setTplForm({...tplForm, name: e.target.value})}
-                    className="h-9 font-bold text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] font-black uppercase text-slate-400">Google Doc ID</Label>
-                  <Input 
-                    placeholder="1aBc2DeFg..." 
-                    value={tplForm.googleDocId} 
-                    onChange={e => setTplForm({...tplForm, googleDocId: e.target.value})}
-                    className="h-9 font-bold text-sm"
-                  />
-                </div>
-              </div>
-              <Button 
-                onClick={() => addTplMutation.mutate({ ...tplForm, programId: templateManager?.id })}
-                disabled={!tplForm.name || !tplForm.googleDocId || addTplMutation.isPending}
-                className="w-full h-9 font-black uppercase tracking-widest text-xs gap-2"
-              >
-                {addTplMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                Add Template to Program
-              </Button>
-            </div>
-
-            {/* List of Templates */}
-            <div className="space-y-3">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Existing Templates</h3>
-              <div className="space-y-2 max-h-[250px] overflow-y-auto pr-2">
-                {isLoadingTpls ? <div className="text-center py-4"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div> : 
-                 templates.length === 0 ? <div className="text-center py-8 text-slate-300 font-bold uppercase text-[10px] border-2 border-dashed rounded-lg">No templates linked yet</div> :
-                 templates.map(tpl => (
-                  <div key={tpl.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg group hover:border-primary/50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 bg-amber-50 text-amber-600 rounded flex items-center justify-center font-black text-xs">
-                        {tpl.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="text-sm font-black text-slate-800 uppercase tracking-tight">{tpl.name}</div>
-                        <div className="text-[10px] font-mono text-slate-400">ID: {tpl.googleDocId.substring(0, 15)}...</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" asChild>
-                        <a href={`https://docs.google.com/document/d/${tpl.googleDocId}`} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5 text-slate-400" /></a>
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-rose-500 hover:bg-rose-50" onClick={() => deleteTplMutation.mutate(tpl.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                 ))
-                }
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setTemplateManager(null)} className="font-black uppercase tracking-widest text-xs">Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Add Program Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
