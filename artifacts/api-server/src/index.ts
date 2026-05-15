@@ -264,7 +264,6 @@ async function runStartupFixes() {
       isActive: true,
       token: "JULY2026",
       sectionsConfig: DEFAULT_SECTIONS as any,
-      programName: prog.name,
     });
     logger.info("Created new July 2026 fellowship form with standard sections");
   }

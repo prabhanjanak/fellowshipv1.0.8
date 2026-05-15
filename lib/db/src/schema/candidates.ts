@@ -25,6 +25,8 @@ export const candidatesTable = pgTable("candidates", {
   address: text("address"),
   unitId: integer("unit_id"),
   status: candidateStatusEnum("status").notNull().default("pending"),
+  mcqScore: text("mcq_score"),
+  psychometricScore: text("psychometric_score"),
   isMock: boolean("is_mock").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

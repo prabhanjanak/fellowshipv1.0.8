@@ -45,6 +45,7 @@ export const applicationSubmissionsTable = pgTable("application_submissions", {
   mailingAddress: text("mailing_address"),
   phone: text("phone"),
   email: text("email").notNull(),
+  gender: text("gender"),
   dateOfBirth: text("date_of_birth"),
   maritalStatus: text("marital_status"),
   spouseDetails: text("spouse_details"),

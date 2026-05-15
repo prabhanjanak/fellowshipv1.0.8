@@ -45,7 +45,7 @@ router.get("/interviews/scores", requireAuth, requireRole("super_admin", "progra
     
     // Find batch for this candidate to get total marks
     // (This is an approximation based on the program)
-    const batch = batches.find(b => b.programId === cand?.programId);
+    const batch = batches[0] ?? null; // Use first available batch for total marks
 
     return {
       id: s.id,

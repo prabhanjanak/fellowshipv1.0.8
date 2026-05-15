@@ -22,7 +22,7 @@ router.get("/batches", requireAuth, async (req: any, res) => {
   }
 });
 
-router.post("/batches", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req, res) => {
+router.post("/batches", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req: any, res) => {
   try {
     const [batch] = await db.insert(batchesTable).values({
       ...req.body,
@@ -36,7 +36,7 @@ router.post("/batches", requireAuth, requireRole("super_admin", "program_admin",
   }
 });
 
-router.get("/batches/:id/candidates", requireAuth, async (req, res) => {
+router.get("/batches/:id/candidates", requireAuth, async (req: any, res) => {
   try {
     const batchId = Number(req.params.id);
     const rows = await db.select().from(batchCandidatesTable).where(eq(batchCandidatesTable.batchId, batchId));
@@ -57,7 +57,7 @@ router.get("/batches/:id/candidates", requireAuth, async (req, res) => {
   }
 });
 
-router.patch("/batches/:id/marks", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req, res) => {
+router.patch("/batches/:id/marks", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req: any, res) => {
   try {
     const batchId = Number(req.params.id);
     const { updates } = req.body as { updates: { candidateId: number; mcqScore?: number; psychometricScore?: number; interviewScore?: number }[] };
@@ -78,7 +78,7 @@ router.patch("/batches/:id/marks", requireAuth, requireRole("super_admin", "prog
   }
 });
 
-router.post("/batches/:id/candidates", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req, res) => {
+router.post("/batches/:id/candidates", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req: any, res) => {
   try {
     const batchId = Number(req.params.id);
     const { candidateIds } = req.body as { candidateIds: number[] };
@@ -96,7 +96,7 @@ router.post("/batches/:id/candidates", requireAuth, requireRole("super_admin", "
 });
 
 // Templates
-router.get("/templates", requireAuth, async (req, res) => {
+router.get("/templates", requireAuth, async (req: any, res) => {
   try {
     const templates = await db.select().from(documentTemplatesTable);
     res.json(templates);
@@ -105,7 +105,7 @@ router.get("/templates", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/templates", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req, res) => {
+router.post("/templates", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req: any, res) => {
   try {
     const [template] = await db.insert(documentTemplatesTable).values(req.body).returning();
     res.json(template);
@@ -114,7 +114,7 @@ router.post("/templates", requireAuth, requireRole("super_admin", "program_admin
   }
 });
 
-router.patch("/templates/:id", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req, res) => {
+router.patch("/templates/:id", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req: any, res) => {
   try {
     const [updated] = await db.update(documentTemplatesTable)
       .set({ ...req.body, updatedAt: new Date() })

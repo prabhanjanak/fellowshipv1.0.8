@@ -150,7 +150,7 @@ app.get(
 
       drawSectionHeader('Specialization & Centers');
       const specs = parseSpecializations(sub.specialization);
-      const centerPrefs = parseCenterPreferences(sub.centerPreference, sub.customAnswers, form?.sectionsConfig);
+      const centerPrefs = parseCenterPreferences(sub.centerPreference, sub.customAnswers, form?.sectionsConfig ?? undefined);
       specs.forEach((sp, idx) => {
         doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(10).text(`${idx + 1}. ${sp}`, { continued: true });
         doc.fillColor(colors.secondary).font('Helvetica').fontSize(9).text(` - Center: ${centerPrefs[sp] || 'No preference'}`);

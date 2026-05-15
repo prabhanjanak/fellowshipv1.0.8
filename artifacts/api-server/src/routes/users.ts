@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, usersTable, unitsTable, programsTable, doctorAssignmentsTable, interviewScoresTable, interviewPanelMembersTable, applicationFormsTable, candidatesTable } from "@workspace/db";
 import { hashPassword } from "../lib/auth";
 import { requireAuth, requireRole } from "../middleware/auth";
@@ -92,7 +92,7 @@ router.post(
       ...(designation !== undefined && { designation }),
       ...(gender !== undefined && { gender }),
       ...(avatarSeed !== undefined && { avatarSeed }),
-      passwordHash, role,
+      passwordHash, role: role as any,
       unitId: unitId ?? null,
       programId: programId ?? null,
       forcePasswordReset: true,

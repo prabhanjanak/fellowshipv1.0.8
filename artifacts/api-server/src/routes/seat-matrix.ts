@@ -193,8 +193,8 @@ router.patch(
   requireAuth,
   requireRole("super_admin", "program_admin", "central_exam_coordinator"),
   async (req, res) => {
-    const speciality = decodeURIComponent(req.params["speciality"] ?? "");
-    const unitName = decodeURIComponent(req.params["unit"] ?? "");
+    const speciality = decodeURIComponent(String(req.params["speciality"] ?? ""));
+    const unitName = decodeURIComponent(String(req.params["unit"] ?? ""));
     const { totalSeats, programId: pidRaw } = req.body as { totalSeats: number; programId?: number };
 
     if (totalSeats === undefined || isNaN(Number(totalSeats)) || Number(totalSeats) < 0) {
@@ -326,7 +326,7 @@ router.delete(
   requireAuth,
   requireRole("super_admin", "program_admin", "central_exam_coordinator"),
   async (req, res) => {
-    const name = decodeURIComponent(req.params["name"] ?? "");
+    const name = decodeURIComponent(String(req.params["name"] ?? ""));
     const programId = req.query["programId"] ? Number(req.query["programId"]) : null;
     if (!name) { res.status(400).json({ error: "name required" }); return; }
     if (programId) {
@@ -346,7 +346,7 @@ router.delete(
   requireAuth,
   requireRole("super_admin", "program_admin", "central_exam_coordinator"),
   async (req, res) => {
-    const name = decodeURIComponent(req.params["name"] ?? "");
+    const name = decodeURIComponent(String(req.params["name"] ?? ""));
     const programId = req.query["programId"] ? Number(req.query["programId"]) : null;
     if (!name) { res.status(400).json({ error: "name required" }); return; }
     if (programId) {

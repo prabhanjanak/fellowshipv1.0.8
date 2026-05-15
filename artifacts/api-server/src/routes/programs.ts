@@ -5,7 +5,7 @@ import { requireAuth, requireRole } from "../middleware/auth";
 
 const router: Router = Router();
 
-async function programSummary(p: { id: number; name: string; code: string; description: string | null; academicYear: string }) {
+async function programSummary(p: Record<string, any>) {
   const specs = await db.select().from(specialitiesTable).where(eq(specialitiesTable.programId, p.id));
   const totalSeats = specs.reduce((sum, s) => sum + s.seats, 0);
   const allocs = await db.select().from(allocationsTable).where(eq(allocationsTable.programId, p.id));
@@ -47,7 +47,7 @@ router.post("/programs", requireAuth, requireRole("super_admin", "program_admin"
     code,
     description: description ?? null,
     academicYear,
-    offerLetterTemplateId: offerLetterTemplateId ?? null,
+    offerLetterTemplateId: (offerLetterTemplateId != null ? Number(offerLetterTemplateId) : null) as any,
   }).returning();
   if (!p) { res.status(500).json({ error: "Failed" }); return; }
   res.json({
@@ -56,7 +56,7 @@ router.post("/programs", requireAuth, requireRole("super_admin", "program_admin"
     code: p.code,
     description: p.description,
     academicYear: p.academicYear,
-    offerLetterTemplateId: p.offerLetterTemplateId,
+    offerLetterTemplateId: (p as any).offerLetterTemplateId,
     totalSeats: 0,
     specialityCount: 0,
     candidateCount: 0,
@@ -91,7 +91,7 @@ router.get("/programs/:programId", requireAuth, async (req, res) => {
     code: p.code,
     description: p.description,
     academicYear: p.academicYear,
-    offerLetterTemplateId: p.offerLetterTemplateId,
+    offerLetterTemplateId: (p as any).offerLetterTemplateId,
     totalSeats,
     specialityCount: specs.length,
     candidateCount: candidates.length,

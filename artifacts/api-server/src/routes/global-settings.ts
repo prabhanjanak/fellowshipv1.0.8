@@ -33,8 +33,8 @@ router.patch(
   requireRole("super_admin", "program_admin"),
   async (req, res) => {
     try {
-      const { value } = req.body;
-      const key = req.params.key;
+      const value = String(req.body.value);
+      const key = String(req.params.key);
 
       const [existing] = await db.select().from(globalSettingsTable).where(eq(globalSettingsTable.key, key));
 

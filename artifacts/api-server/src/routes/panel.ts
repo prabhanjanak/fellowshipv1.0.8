@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { eq } from "drizzle-orm";
-import { db, usersTable, candidatesTable } from "@workspace/db";
+import { eq, sql } from "drizzle-orm";
+import { db, usersTable, candidatesTable, globalSettingsTable } from "@workspace/db";
 import { requireAuth, requireRole } from "../middleware/auth";
-import { sql } from "drizzle-orm";
+import { logger } from "../lib/logger";
 
 const router: Router = Router();
 

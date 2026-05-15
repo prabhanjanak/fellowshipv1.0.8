@@ -150,7 +150,7 @@ router.get(
       renderRow('Email Address', sub.email);
       renderRow('Phone Number', sub.phone);
       renderRow('Date of Birth', sub.dateOfBirth);
-      renderRow('Gender', sub.gender);
+      renderRow('Gender', (sub as any).gender);
       renderRow('Marital Status', sub.maritalStatus);
       renderRow('Permanent Address', sub.permanentAddress);
 
@@ -163,7 +163,7 @@ router.get(
 
       drawSectionHeader('Specialization & Center Preferences');
       const specs = parseSpecializations(sub.specialization);
-      const centerPrefs = parseCenterPreferences(sub.centerPreference, sub.customAnswers, form?.sectionsConfig);
+      const centerPrefs = parseCenterPreferences(sub.centerPreference, sub.customAnswers, form?.sectionsConfig ?? undefined);
       
       if (specs.length === 0) {
         doc.fillColor(colors.secondary).font('Helvetica').fontSize(10).text('No specializations selected.');
@@ -818,7 +818,7 @@ router.post(
 
     try {
       const auth = new google.auth.GoogleAuth({
-        credentials: cfg.serviceAccountJson as Parameters<typeof google.auth.GoogleAuth>[0]["credentials"],
+        credentials: cfg.serviceAccountJson as any,
         scopes: ["https://www.googleapis.com/auth/forms.responses.readonly"],
       });
 

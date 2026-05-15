@@ -254,7 +254,7 @@ router.post("/debug/init-july-2026", requireAuth, requireRole("super_admin"), as
       token: "JULY2026",
       deadline: new Date("2026-06-15"),
       isActive: true,
-      sectionsConfig: JSON.stringify(DEFAULT_SECTIONS)
+      sectionsConfig: DEFAULT_SECTIONS as any
     }).returning();
 
     // 3. Populate Seat Matrix (Live)

@@ -339,7 +339,8 @@ router.patch("/candidates/:candidateId/marks", requireAuth, requireRole("super_a
     `);
   }
 
-  res.json({ id: updated.id, mcqScore: updated.mcqScore, psychometricScore: updated.psychometricScore });
+  const updatedAny = updated as any;
+  res.json({ id: updated.id, mcqScore: updatedAny.mcqScore != null ? Number(updatedAny.mcqScore) : null, psychometricScore: updatedAny.psychometricScore != null ? Number(updatedAny.psychometricScore) : null });
 });
 
 router.get("/candidates/:candidateId", requireAuth, async (req, res) => {
@@ -441,8 +442,9 @@ router.post("/candidates/:id/send-offer", requireAuth, requireRole("super_admin"
         const [form] = await db.select().from(applicationFormsTable).where(eq(applicationFormsTable.id, submission.formId));
         if (form?.programId) {
           const [prog] = await db.select().from(programsTable).where(eq(programsTable.id, form.programId));
-          if (prog?.offerLetterTemplateId) {
-            templateId = prog.offerLetterTemplateId;
+          const progAny = prog as any;
+          if (progAny?.offerLetterTemplateId) {
+            templateId = String(progAny.offerLetterTemplateId);
           }
         }
       }
@@ -512,10 +514,12 @@ router.post("/candidates/:id/send-offer", requireAuth, requireRole("super_admin"
 router.post("/candidates/:id/generate-document", requireAuth, requireRole("super_admin", "program_admin"), async (req, res) => {
   const id = Number(req.params.id);
   const [c] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, id));
-  if (!c) return res.status(404).json({ error: "Candidate not found" });
+  if (!c) { res.status(404).json({ error: "Candidate not found" }); return; }
 
-  const specialization = c.reviewNotes?.includes("Allocated to ") 
-    ? c.reviewNotes.replace("Allocated to ", "").split(" [")[0] 
+  const [subForNotes] = await db.select().from(applicationSubmissionsTable).where(eq(applicationSubmissionsTable.email, c.email));
+  const cReviewNotes = subForNotes?.reviewNotes ?? "";
+  const specialization = cReviewNotes.includes("Allocated to ") 
+    ? cReviewNotes.replace("Allocated to ", "").split(" [")[0] 
     : "Fellowship";
 
   const units = await db.select().from(unitsTable);
@@ -575,7 +579,7 @@ router.get("/candidates/:id/summary-pdf", requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const [c] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, id));
-    if (!c) return res.status(404).json({ error: "Candidate not found" });
+    if (!c) { res.status(404).json({ error: "Candidate not found" }); return; }
 
     const full = await fullCandidate(c);
     const [sub] = await db.select().from(applicationSubmissionsTable).where(eq(applicationSubmissionsTable.email, c.email));
@@ -654,7 +658,7 @@ router.get("/candidates/:id/summary-pdf", requireAuth, async (req, res) => {
     renderField("Mobile Registry", full.phone, leftCol, currY);
     renderField("Academic Year", batch?.name || "JULY 2026 CYCLE", rightCol, currY);
     currY += 40;
-    renderField("Clinical Segment", c.reviewNotes?.replace("Allocated to ", "") || "Fellowship Track", leftCol, currY);
+    renderField("Clinical Segment", (sub?.reviewNotes ?? "").replace("Allocated to ", "") || "Fellowship Track", leftCol, currY);
     renderField("Reporting Unit", full.unitName || "Pending Allocation", rightCol, currY);
     doc.moveDown(4);
 
