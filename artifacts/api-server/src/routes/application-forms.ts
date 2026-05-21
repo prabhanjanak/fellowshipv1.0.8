@@ -441,10 +441,20 @@ router.get(
 
       const caParsed = (s.customAnswers as Record<string, any>) || {};
 
+      const segments = specParsed.map(spec => {
+        const sName = spec.trim().toLowerCase();
+        if (sName.includes("retina")) {
+          return "Retina";
+        }
+        return "Anterior";
+      });
+      const segmentString = [...new Set(segments)].join(", ");
+
       const baseRow: Record<string, any> = {
         "Submission ID": s.id,
         "Date": s.submittedAt ? new Date(s.submittedAt).toISOString().split('T')[0] : "",
         "Specialities": specString,
+        "Retina/Anterior": segmentString || "Anterior",
         "Timestamp": s.submittedAt ? new Date(s.submittedAt).toLocaleString("en-IN") : "",
         "Name in Full (First Name, Middle Name, Last/Family Name)": s.fullName,
         "E-mail (this would be the ID all communication would be shared on)": s.email,
@@ -547,68 +557,64 @@ router.get(
       }
     };
 
-    // 1. General Submissions Sheet
-    const wsAll = XLSX.utils.json_to_sheet(rows);
+    // 1. General Submissions Sheet (First Tab)
+    const wsGeneral = XLSX.utils.json_to_sheet(rows);
     const colWidths = Object.keys(rows[0] ?? {}).map((k) => ({ wch: Math.max(k.length + 2, 22) }));
-    wsAll["!cols"] = colWidths;
-    // Set row height for header
-    wsAll["!rows"] = [{ hpt: 30 }]; 
-    addAutoFilter(wsAll);
-    XLSX.utils.book_append_sheet(wb, wsAll, "All Submissions");
+    wsGeneral["!cols"] = colWidths;
+    wsGeneral["!rows"] = [{ hpt: 35 }]; // Spacious header height
+    addAutoFilter(wsGeneral);
+    XLSX.utils.book_append_sheet(wb, wsGeneral, "General");
 
-    // 2. Specialization Specific Sheets
-    const specsFound = new Set<string>();
-    subs.forEach(s => {
-      const sp = parseSpecializationString(s.specialization);
-      sp.forEach(item => specsFound.add(String(item)));
-    });
-
-    specsFound.forEach(specName => {
-      const specRows = rows.filter(r => r["Specialities"].includes(specName));
-      if (specRows.length > 0) {
-        const wsSpec = XLSX.utils.json_to_sheet(specRows);
-        wsSpec["!cols"] = colWidths;
-        wsSpec["!rows"] = [{ hpt: 25 }];
-        addAutoFilter(wsSpec);
-        // Sanitize sheet name (max 31 chars, no special chars)
-        const sheetName = specName.replace(/[\\/?*[\]]/g, "").slice(0, 30);
-        XLSX.utils.book_append_sheet(wb, wsSpec, sheetName);
-      }
-    });
-
-    // 3. Application Summary Sheet
-    const summaryRows = subs.map(s => {
-      const specParsed = parseSpecializationString(s.specialization);
-      const specString = specParsed.join(", ");
-
-      let cpParsed: Record<string, any> = {};
-      try { cpParsed = JSON.parse(s.centerPreference ?? "{}"); } catch { }
-      const centerString = Object.values(cpParsed).map(v => Array.isArray(v) ? v.join(", ") : v).join(" | ");
-
-      return {
-        "Student Name": s.fullName,
-        "Specializations Applied": specString,
-        "Preferred Locations": centerString || s.centerPreference || "Not Specified",
-        "Application Date": s.submittedAt ? new Date(s.submittedAt).toLocaleDateString("en-IN") : "",
-        "Application Time": s.submittedAt ? new Date(s.submittedAt).toLocaleTimeString("en-IN") : "",
-        "Contact Email": s.email,
-        "Contact Phone": s.phone ?? ""
-      };
-    });
-
-    const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
-    wsSummary["!cols"] = [
-      { wch: 30 }, { wch: 40 }, { wch: 40 }, { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 20 }
+    // 2. Exact 8 Speciality Specific Sheets in strict order
+    const specialitiesConfig = [
+      { dbName: "Cornea", sheetName: "Cornea" },
+      { dbName: "Glaucoma", sheetName: "Glaucoma" },
+      { dbName: "IOL", sheetName: "IOL Fellowship" },
+      { dbName: "Medical Retina", sheetName: "Medical Retina" },
+      { dbName: "Oculoplasty", sheetName: "Oculoplasty" },
+      { dbName: "Pediatric Ophthalmology", sheetName: "Pediatric Ophthalmology" },
+      { dbName: "Phaco Refractive", sheetName: "Phaco Refractive" },
+      { dbName: "Vitreo Retina", sheetName: "Vitreo Retina" }
     ];
-    wsSummary["!rows"] = [{ hpt: 35 }]; // Taller header for summary
-    addAutoFilter(wsSummary);
-    XLSX.utils.book_append_sheet(wb, wsSummary, "Application Summary");
+
+    const matchRowToSpeciality = (row: any, dbName: string): boolean => {
+      const specsStr = String(row["Specialities"] ?? "").toLowerCase();
+      const name = dbName.toLowerCase();
+      if (name === "iol") {
+        return specsStr.includes("iol");
+      }
+      if (name === "pediatric ophthalmology") {
+        return specsStr.includes("pediatric");
+      }
+      return specsStr.includes(name);
+    };
+
+    const headers = Object.keys(rows[0] ?? {});
+
+    specialitiesConfig.forEach(config => {
+      const specRows = rows.filter(r => matchRowToSpeciality(r, config.dbName));
+      let wsSpec: XLSX.WorkSheet;
+      if (specRows.length > 0) {
+        wsSpec = XLSX.utils.json_to_sheet(specRows);
+      } else {
+        // Create sheet with headers only if no candidates exist for this specialization
+        wsSpec = XLSX.utils.json_to_sheet([], { header: headers });
+      }
+
+      wsSpec["!cols"] = colWidths;
+      wsSpec["!rows"] = [{ hpt: 30 }]; // Spacious header height
+      addAutoFilter(wsSpec);
+      XLSX.utils.book_append_sheet(wb, wsSpec, config.sheetName);
+    });
 
     const safeName = (form?.title ?? `form-${formId}`).replace(/[^a-zA-Z0-9-_]/g, "_").slice(0, 40);
+    const today = new Date().toISOString().split("T")[0];
+    const filename = `SAV_${safeName}_Admissions_${today}.xlsx`;
+
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="${safeName}_submissions.xlsx"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(buffer);
   }
 );
