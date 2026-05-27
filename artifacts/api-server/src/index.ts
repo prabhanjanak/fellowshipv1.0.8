@@ -1,7 +1,8 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { db, usersTable, applicationFormsTable, programsTable } from "@workspace/db";
-import { eq, sql, ilike } from "drizzle-orm";
+import { db, usersTable, applicationFormsTable, programsTable, candidatesTable, applicationSubmissionsTable, specialitiesTable, candidatePreferencesTable, applicationsTable } from "@workspace/db";
+import { eq, sql, ilike, and } from "drizzle-orm";
+import { parseSpecializationString } from "./lib/utils";
 import { DEFAULT_SECTIONS } from "./lib/default-sections";
 
 const rawPort = process.env["PORT"];
@@ -275,6 +276,82 @@ async function runStartupFixes() {
       sectionsConfig: DEFAULT_SECTIONS as any,
     });
     logger.info("Created new July 2026 fellowship form with standard sections");
+  }
+
+  // --- HEALING MIGRATION FOR OLD/EXISTING CANDIDATES ---
+  try {
+    const existingCands = await db.select().from(candidatesTable);
+    const allSubmissions = await db.select().from(applicationSubmissionsTable);
+    const specialities = await db.select().from(specialitiesTable);
+    const preferences = await db.select().from(candidatePreferencesTable);
+
+    logger.info(`Running candidates database compatibility healing migration for ${existingCands.length} candidates...`);
+
+    let healedCount = 0;
+    for (const cand of existingCands) {
+      // Only heal candidates in active statuses
+      const isActiveStatus = ["approved", "waitlisted", "allocated", "interview_completed"].includes(cand.status);
+      if (!isActiveStatus) continue;
+
+      // Determine specializations
+      let candSpecs: typeof specialities = [];
+
+      // 1. Try from candidatePreferences
+      const candPrefs = preferences.filter(p => p.candidateId === cand.id);
+      if (candPrefs.length > 0) {
+        candSpecs = candPrefs
+          .map(p => specialities.find(s => s.id === p.specialityId))
+          .filter(Boolean) as typeof specialities;
+      }
+
+      // 2. Try from submissions specialization field
+      if (candSpecs.length === 0) {
+        const sub = allSubmissions.find(s => s.email?.toLowerCase().trim() === cand.email?.toLowerCase().trim());
+        if (sub && sub.specialization) {
+          const specNames = parseSpecializationString(sub.specialization);
+          candSpecs = specNames
+            .map(name => specialities.find(s => s.name.toLowerCase().trim() === name.toLowerCase().trim()))
+            .filter(Boolean) as typeof specialities;
+        }
+      }
+
+      // 3. Fallback to first available speciality in database if completely empty
+      if (candSpecs.length === 0 && specialities.length > 0) {
+        candSpecs = [specialities[0]];
+      }
+
+      // Ensure an application row exists for each resolved speciality
+      for (const spec of candSpecs) {
+        const existingApp = await db.select().from(applicationsTable).where(
+          and(
+            eq(applicationsTable.candidateId, cand.id),
+            eq(applicationsTable.specialityId, spec.id)
+          )
+        );
+
+        if (existingApp.length === 0) {
+          const prefix = spec.code ? spec.code.toUpperCase() : "GEN";
+          const year = 2026;
+          const countResult = await db.execute(sql`
+            SELECT COUNT(*)::int as count FROM applications WHERE speciality_id = ${spec.id} AND hall_ticket_number IS NOT NULL
+          `);
+          const seq = Number(countResult.rows[0]?.count ?? 0) + 1;
+          const hallTicketNumber = `${prefix}-${year}-${String(seq).padStart(3, "0")}`;
+
+          await db.insert(applicationsTable).values({
+            candidateId: cand.id,
+            specialityId: spec.id,
+            hallTicketNumber,
+            status: "approved",
+          });
+          healedCount++;
+          logger.info(`[healed] Created application for Candidate: ${cand.fullName} (${cand.candidateCode}), Spec: ${spec.name}, HT: ${hallTicketNumber}`);
+        }
+      }
+    }
+    logger.info(`Candidates database compatibility healing migration completed successfully. Healed ${healedCount} applications.`);
+  } catch (err: any) {
+    logger.error({ err }, "Candidates database compatibility healing migration failed");
   }
 }
 

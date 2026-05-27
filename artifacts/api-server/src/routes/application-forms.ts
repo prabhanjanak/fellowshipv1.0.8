@@ -27,6 +27,56 @@ function checkCompleteness(sub: {
   return !!(sub.fullName && sub.email && sub.phone && sub.degree && sub.medicalCollege && sub.lor1Url && sub.lor2Url && sub.photoUrl);
 }
 
+async function syncSubmissionToCandidateAndDocuments(candidateId: number, sub: any) {
+  // 1. Sync candidate profile info
+  await db.update(candidatesTable).set({
+    fullName: sub.fullName,
+    phone: sub.phone ?? null,
+    dateOfBirth: sub.dateOfBirth ?? null,
+    qualification: sub.degree ?? null,
+    collegeName: sub.medicalCollege ?? null,
+    address: sub.permanentAddress ?? null,
+  }).where(eq(candidatesTable.id, candidateId));
+
+  // 2. Sync LOR1, LOR2, PHOTO, and PAYMENT documents
+  const documentTypes = [
+    { type: "LOR1", url: sub.lor1Url, name: sub.lor1RefName ? `LOR1_${sub.lor1RefName}.pdf` : "LOR1.pdf" },
+    { type: "LOR2", url: sub.lor2Url, name: sub.lor2RefName ? `LOR2_${sub.lor2RefName}.pdf` : "LOR2.pdf" },
+    { type: "PHOTO", url: sub.photoUrl, name: "photo.jpg" },
+    { type: "PAYMENT", url: sub.paymentUrl, name: "payment_proof.jpg" }
+  ];
+
+  for (const doc of documentTypes) {
+    if (doc.url) {
+      // Check if document already exists
+      const existingDoc = await db.select().from(documentsTable).where(
+        and(
+          eq(documentsTable.candidateId, candidateId),
+          eq(documentsTable.docType, doc.type)
+        )
+      );
+
+      if (existingDoc.length > 0) {
+        // Update existing document
+        await db.update(documentsTable).set({
+          fileUrl: doc.url,
+          fileName: doc.name,
+          uploadedAt: new Date()
+        }).where(eq(documentsTable.id, existingDoc[0].id));
+      } else {
+        // Insert new document
+        await db.insert(documentsTable).values({
+          candidateId,
+          docType: doc.type,
+          fileName: doc.name,
+          fileUrl: doc.url,
+          uploadedAt: new Date()
+        });
+      }
+    }
+  }
+}
+
 // Admin: generate application PDF
 router.get(
   "/application-forms/submissions/:id/pdf",
@@ -660,12 +710,55 @@ router.patch(
     
     updates.reviewedAt = new Date();
 
+    const [oldSub] = await db.select().from(applicationSubmissionsTable).where(eq(applicationSubmissionsTable.id, id));
+    if (!oldSub) return res.status(404).json({ error: "Submission not found" });
+
+    // Document Modification: physically delete replaced files to invalidate old links/QR codes
+    const fileFields = ["lor1Url", "lor2Url", "photoUrl", "paymentUrl"];
+    for (const field of fileFields) {
+      const oldValue = (oldSub as any)[field];
+      const newValue = updates[field];
+      if (newValue !== undefined && newValue !== oldValue) {
+        if (oldValue && typeof oldValue === "string" && oldValue.startsWith("/objects/uploads/")) {
+          const isReplit = !!process.env.REPL_ID;
+          if (!isReplit) {
+            // Local fallback deletion on disk
+            try {
+              const fsPromises = await import("fs/promises");
+              const localPath = path.join(process.cwd(), "uploads", oldValue.replace("/objects/uploads/", ""));
+              await fsPromises.unlink(localPath);
+              req.log?.info?.({ localPath }, `Successfully deleted replaced file from disk`);
+            } catch (err: any) {
+              req.log?.warn?.({ err, path: oldValue }, `Failed to delete replaced file from disk (might not exist)`);
+            }
+          } else {
+            // Replit object storage deletion
+            try {
+              const { ObjectStorageService } = await import("../lib/objectStorage");
+              const objectStorageService = new ObjectStorageService();
+              const objectFile = await objectStorageService.getObjectEntityFile(oldValue);
+              await objectFile.delete();
+              req.log?.info?.({ objectPath: oldValue }, `Successfully deleted replaced file from object storage`);
+            } catch (err: any) {
+              req.log?.warn?.({ err, path: oldValue }, `Failed to delete replaced file from object storage`);
+            }
+          }
+        }
+      }
+    }
+
     const [updated] = await db
       .update(applicationSubmissionsTable)
       .set(updates)
       .where(eq(applicationSubmissionsTable.id, id))
       .returning();
     if (!updated) return res.status(404).json({ error: "Submission not found" });
+
+    // Sync with existing candidate record if one exists in the system
+    const existingCandidate = await db.select().from(candidatesTable).where(eq(candidatesTable.email, updated.email));
+    if (existingCandidate.length > 0) {
+      await syncSubmissionToCandidateAndDocuments(existingCandidate[0].id, updated);
+    }
 
     if (updates.status === "approved" || updates.status === "reviewed") {
       const existing = await db.select().from(candidatesTable).where(eq(candidatesTable.email, updated.email));
@@ -767,6 +860,7 @@ router.post(
     if (existing.length > 0) {
       const candidateId = existing[0]!.id;
       await db.update(applicationSubmissionsTable).set({ status: "approved", candidateId, reviewedAt: new Date() }).where(eq(applicationSubmissionsTable.id, id));
+      await syncSubmissionToCandidateAndDocuments(candidateId, sub);
       
       // Ensure Applications exist for existing candidate
       if (sub.specialization) {
@@ -870,43 +964,7 @@ router.post(
       }
     }
 
-    // Copy documents from submission to candidate's documents
-    const docEntries: { candidateId: number; docType: string; fileName: string; fileUrl: string }[] = [];
-    if (sub.lor1Url) {
-      docEntries.push({
-        candidateId: candidate.id,
-        docType: "LOR1",
-        fileName: sub.lor1RefName ? `LOR1_${sub.lor1RefName}.pdf` : "LOR1.pdf",
-        fileUrl: sub.lor1Url,
-      });
-    }
-    if (sub.lor2Url) {
-      docEntries.push({
-        candidateId: candidate.id,
-        docType: "LOR2",
-        fileName: sub.lor2RefName ? `LOR2_${sub.lor2RefName}.pdf` : "LOR2.pdf",
-        fileUrl: sub.lor2Url,
-      });
-    }
-    if (sub.photoUrl) {
-      docEntries.push({
-        candidateId: candidate.id,
-        docType: "PHOTO",
-        fileName: "photo.jpg",
-        fileUrl: sub.photoUrl,
-      });
-    }
-    if (sub.paymentUrl) {
-      docEntries.push({
-        candidateId: candidate.id,
-        docType: "PAYMENT",
-        fileName: "payment_proof.jpg",
-        fileUrl: sub.paymentUrl,
-      });
-    }
-    if (docEntries.length > 0) {
-      await db.insert(documentsTable).values(docEntries).onConflictDoNothing();
-    }
+    await syncSubmissionToCandidateAndDocuments(candidate.id, sub);
 
     await db.update(applicationSubmissionsTable).set({ status: "approved", candidateId: candidate.id, reviewedAt: new Date() }).where(eq(applicationSubmissionsTable.id, id));
 
@@ -962,6 +1020,7 @@ router.post(
           if (existing.length > 0) {
             const candidateId = existing[0]!.id;
             await db.update(applicationSubmissionsTable).set({ status: "approved", candidateId, reviewedAt: new Date() }).where(eq(applicationSubmissionsTable.id, id));
+            await syncSubmissionToCandidateAndDocuments(candidateId, sub);
             
             // Ensure Applications exist for existing candidate in bulk approval
             if (sub.specialization) {
@@ -1064,43 +1123,7 @@ router.post(
             }
           }
 
-          // Copy documents from submission to candidate's documents
-          const docEntries: { candidateId: number; docType: string; fileName: string; fileUrl: string }[] = [];
-          if (sub.lor1Url) {
-            docEntries.push({
-              candidateId: candidate.id,
-              docType: "LOR1",
-              fileName: sub.lor1RefName ? `LOR1_${sub.lor1RefName}.pdf` : "LOR1.pdf",
-              fileUrl: sub.lor1Url,
-            });
-          }
-          if (sub.lor2Url) {
-            docEntries.push({
-              candidateId: candidate.id,
-              docType: "LOR2",
-              fileName: sub.lor2RefName ? `LOR2_${sub.lor2RefName}.pdf` : "LOR2.pdf",
-              fileUrl: sub.lor2Url,
-            });
-          }
-          if (sub.photoUrl) {
-            docEntries.push({
-              candidateId: candidate.id,
-              docType: "PHOTO",
-              fileName: "photo.jpg",
-              fileUrl: sub.photoUrl,
-            });
-          }
-          if (sub.paymentUrl) {
-            docEntries.push({
-              candidateId: candidate.id,
-              docType: "PAYMENT",
-              fileName: "payment_proof.jpg",
-              fileUrl: sub.paymentUrl,
-            });
-          }
-          if (docEntries.length > 0) {
-            await db.insert(documentsTable).values(docEntries).onConflictDoNothing();
-          }
+          await syncSubmissionToCandidateAndDocuments(candidate.id, sub);
 
           await db.update(applicationSubmissionsTable).set({ status: "approved", candidateId: candidate.id, reviewedAt: new Date() }).where(eq(applicationSubmissionsTable.id, id));
 

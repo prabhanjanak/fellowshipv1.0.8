@@ -485,9 +485,14 @@ function FileFieldEditor({ label, currentUrl, onUploaded }: { label: string; cur
       const { uploadURL, objectPath } = await urlRes.json();
 
       // Step 2: PUT file to presigned URL
+      const uploadHeaders: Record<string, string> = { 'Content-Type': file.type };
+      if (token && uploadURL.startsWith('/api/')) {
+        uploadHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
       const putRes = await fetch(uploadURL, {
         method: 'PUT',
-        headers: { 'Content-Type': file.type },
+        headers: uploadHeaders,
         body: file,
       });
       if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);

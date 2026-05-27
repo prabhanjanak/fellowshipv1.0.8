@@ -15,7 +15,7 @@ function openDraftDB(): Promise<IDBDatabase> {
   });
 }
 
-export async function saveDraft(token: string, state: { form: any; step: number; files: Record<string, File> }) {
+export async function saveDraft(token: string, state: { form: any; step: number; files: Record<string, File>; paymentVerified?: any }) {
   try {
     const db = await openDraftDB();
     const tx = db.transaction(STORE_NAME, "readwrite");
@@ -29,7 +29,7 @@ export async function saveDraft(token: string, state: { form: any; step: number;
   }
 }
 
-export async function loadDraft(token: string): Promise<{ form: any; step: number; files: Record<string, File> } | null> {
+export async function loadDraft(token: string): Promise<{ form: any; step: number; files: Record<string, File>; paymentVerified?: any } | null> {
   try {
     const db = await openDraftDB();
     const tx = db.transaction(STORE_NAME, "readonly");

@@ -6,6 +6,8 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import path from "path";
 import PDFDocument from "pdfkit";
+import fs from "fs/promises";
+import { createWriteStream } from "fs";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -17,12 +19,59 @@ router.post("/storage/uploads/request-url", requireAuth, async (req: Request, re
     return;
   }
   try {
+    const isReplit = !!process.env.REPL_ID;
+    if (!isReplit) {
+      // Local fallback for production outside Replit
+      const objectId = Math.random().toString(36).substring(2, 10);
+      const ext = name.split('.').pop() ?? "bin";
+      const sanitizedName = name.split('.')[0].replace(/[^a-zA-Z0-9]/g, "_");
+      const filename = `${sanitizedName}_${objectId}.${ext}`;
+      const folderName = "Admin_Uploads";
+
+      const uploadURL = `/api/storage/uploads/local-upload/${folderName}/${filename}`;
+      const objectPath = `/objects/uploads/${folderName}/${filename}`;
+      res.json({ uploadURL, objectPath, metadata: { name: name.trim(), size, contentType } });
+      return;
+    }
+
     const uploadURL = await objectStorageService.getObjectEntityUploadURL();
     const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
     res.json({ uploadURL, objectPath, metadata: { name: name.trim(), size, contentType } });
   } catch (error) {
     req.log.error({ err: error }, "Error generating upload URL");
     res.status(500).json({ error: "Failed to generate upload URL" });
+  }
+});
+
+router.put("/storage/uploads/local-upload/:folderName/:filename", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const folderName = String(req.params.folderName);
+    const filename = String(req.params.filename);
+
+    const uploadDir = path.join(process.cwd(), "uploads", folderName);
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    const filePath = path.join(uploadDir, filename);
+    const writeStream = createWriteStream(filePath);
+
+    req.pipe(writeStream);
+
+    writeStream.on("finish", () => {
+      res.json({ success: true, path: `/objects/uploads/${folderName}/${filename}` });
+    });
+
+    writeStream.on("error", (err) => {
+      req.log.error({ err }, "Write stream error");
+      if (!res.headersSent) res.status(500).json({ error: "File write failed" });
+    });
+
+    req.on("error", (err) => {
+      req.log.error({ err }, "Request stream error");
+      if (!res.headersSent) res.status(500).json({ error: "Upload stream failed" });
+    });
+  } catch (error) {
+    req.log.error({ err: error }, "Failed to process upload");
+    if (!res.headersSent) res.status(500).json({ error: "Failed to process upload" });
   }
 });
 

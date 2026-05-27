@@ -158,7 +158,40 @@ export default function ApplyPage({ token, isManualEntry }: { token: string; isM
              if (savedDraft.files) {
                setFiles(savedDraft.files);
              }
+             if (savedDraft.paymentVerified) {
+               console.log(`[AutoSave] Restored verified payment details from draft`, savedDraft.paymentVerified);
+               setPaymentVerified(savedDraft.paymentVerified);
+             } else {
+               // Try fallback to localStorage
+               const localPaymentStr = localStorage.getItem(`payment_verified_${token}`);
+               if (localPaymentStr) {
+                 try {
+                   const localPayment = JSON.parse(localPaymentStr);
+                   if (localPayment && localPayment.paymentId && localPayment.finalForm) {
+                     console.log(`[AutoSave] Restored verified payment details from localStorage`, localPayment);
+                     setPaymentVerified(localPayment);
+                   }
+                 } catch (e) {
+                   console.error("Failed to parse local payment verification state", e);
+                 }
+               }
+             }
              return;
+           }
+
+           if (active) {
+             const localPaymentStr = localStorage.getItem(`payment_verified_${token}`);
+             if (localPaymentStr) {
+               try {
+                 const localPayment = JSON.parse(localPaymentStr);
+                 if (localPayment && localPayment.paymentId && localPayment.finalForm) {
+                   console.log(`[AutoSave] Restored verified payment details from localStorage (no IndexedDB draft)`, localPayment);
+                   setPaymentVerified(localPayment);
+                 }
+               } catch (e) {
+                 console.error("Failed to parse local payment verification state", e);
+               }
+             }
            }
 
            const initial: Record<string, any> = { ...INITIAL_FORM };
@@ -192,13 +225,13 @@ export default function ApplyPage({ token, isManualEntry }: { token: string; isM
       console.log(`[AutoSave] Saving draft to IndexedDB for token: ${token}`);
       setIsSaving(true);
       
-      saveDraft(token, { form, step, files }).then(() => {
+      saveDraft(token, { form, step, files, paymentVerified }).then(() => {
         setIsSaving(false);
         setLastSaved(new Date().toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit' }));
         console.log(`[AutoSave] Draft + files successfully saved to IndexedDB`);
       });
     }
-  }, [form, step, files, token, formInfo, submitted]);
+  }, [form, step, files, token, formInfo, submitted, paymentVerified]);
 
   useEffect(() => {
     // Load payment config
@@ -366,11 +399,17 @@ export default function ApplyPage({ token, isManualEntry }: { token: string; isM
       if (isManualEntry) {
          const specCount = Array.isArray(finalForm.specialization) ? finalForm.specialization.length : 1;
          const calculatedAmount = 2750 * specCount;
-         setPaymentVerified({
+         const verifiedState = {
            paymentId: finalForm.paymentUTR || ("MANUAL_ENTRY_" + Date.now()),
            finalForm: { ...finalForm, paymentMode: "Manual Offline", paidAmount: calculatedAmount },
            verifyResponse: { success: true }
-         });
+         };
+         setPaymentVerified(verifiedState);
+         
+         // Persist manual payment state immediately
+         await saveDraft(token, { form, step, files, paymentVerified: verifiedState });
+         localStorage.setItem(`payment_verified_${token}`, JSON.stringify(verifiedState));
+         
          window.scrollTo(0, 0);
          setSubmitting(false);
          return;
@@ -406,11 +445,17 @@ export default function ApplyPage({ token, isManualEntry }: { token: string; isM
             if (!verifyRes.ok) throw new Error(verifyData.error || "Payment verification failed");
 
             // 4. Show payment confirmation screen (user sees Payment ID, then confirms)
-            setPaymentVerified({
+            const verifiedState = {
               paymentId: response.razorpay_payment_id,
               finalForm,
               verifyResponse: verifyData,
-            });
+            };
+            setPaymentVerified(verifiedState);
+
+            // Persist payment state immediately for mobile stability
+            await saveDraft(token, { form, step, files, paymentVerified: verifiedState });
+            localStorage.setItem(`payment_verified_${token}`, JSON.stringify(verifiedState));
+
             window.scrollTo(0, 0);
           } catch (e: any) {
             setSubmitError(e.message);
@@ -507,6 +552,7 @@ export default function ApplyPage({ token, isManualEntry }: { token: string; isM
         setSubmitted(true);
         // Clear draft on success
         localStorage.removeItem(`fellowship_draft_${token}`);
+        localStorage.removeItem(`payment_verified_${token}`);
         await clearDraft(token);
         window.scrollTo(0, 0);
       } catch (e: any) {

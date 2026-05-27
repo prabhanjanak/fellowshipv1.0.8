@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, applicationSubmissionsTable, candidatesTable, usersTable, interviewScoresTable, allocationsTable, programsTable, unitsTable, specialitiesTable, applicationsTable, batchesTable, documentsTable, batchCandidatesTable } from "@workspace/db";
+import { db, applicationSubmissionsTable, candidatesTable, usersTable, interviewScoresTable, allocationsTable, programsTable, unitsTable, specialitiesTable, applicationsTable, batchesTable, documentsTable, batchCandidatesTable, candidatePreferencesTable } from "@workspace/db";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middleware/auth";
 import * as XLSX from "xlsx";
@@ -711,12 +711,86 @@ router.get("/candidates/:id/hall-ticket", requireAuth, async (req, res) => {
     if (!candidate) return res.status(404).json({ error: "Candidate not found" });
 
     // 2. Fetch all active/approved applications
-    const apps = await db.select().from(applicationsTable).where(
+    let apps = await db.select().from(applicationsTable).where(
       and(
         eq(applicationsTable.candidateId, candidate.id),
         sql`${applicationsTable.status} IN ('approved', 'verified', 'scheduled', 'interviewed', 'completed')`
       )
     );
+
+    if (apps.length === 0) {
+      // Dynamic on-the-fly candidate compatibility healing migration
+      try {
+        const specialities = await db.select().from(specialitiesTable);
+        const preferences = await db.select().from(candidatePreferencesTable);
+        const allSubmissions = await db.select().from(applicationSubmissionsTable);
+        
+        // Resolve candidate specializations
+        let candSpecs: typeof specialities = [];
+
+        // Try from candidatePreferences
+        const candPrefs = preferences.filter(p => p.candidateId === candidate.id);
+        if (candPrefs.length > 0) {
+          candSpecs = candPrefs
+            .map(p => specialities.find(s => s.id === p.specialityId))
+            .filter(Boolean) as typeof specialities;
+        }
+
+        // Try from submissions
+        if (candSpecs.length === 0) {
+          const sub = allSubmissions.find(s => s.email?.toLowerCase().trim() === candidate.email?.toLowerCase().trim());
+          if (sub && sub.specialization) {
+            const specNames = parseSpecializationString(sub.specialization);
+            candSpecs = specNames
+              .map(name => specialities.find(s => s.name.toLowerCase().trim() === name.toLowerCase().trim()))
+              .filter(Boolean) as typeof specialities;
+          }
+        }
+
+        // Fallback to first available speciality in database
+        if (candSpecs.length === 0 && specialities.length > 0) {
+          candSpecs = [specialities[0]];
+        }
+
+        for (const spec of candSpecs) {
+          const existingApp = await db.select().from(applicationsTable).where(
+            and(
+              eq(applicationsTable.candidateId, candidate.id),
+              eq(applicationsTable.specialityId, spec.id)
+            )
+          );
+
+          if (existingApp.length === 0) {
+            const prefix = spec.code ? spec.code.toUpperCase() : "GEN";
+            const year = 2026;
+            const countResult = await db.execute(sql`
+              SELECT COUNT(*)::int as count FROM applications WHERE speciality_id = ${spec.id} AND hall_ticket_number IS NOT NULL
+            `);
+            const seq = Number(countResult.rows[0]?.count ?? 0) + 1;
+            const hallTicketNumber = `${prefix}-${year}-${String(seq).padStart(3, "0")}`;
+
+            await db.insert(applicationsTable).values({
+              candidateId: candidate.id,
+              specialityId: spec.id,
+              hallTicketNumber,
+              status: "approved",
+            });
+            console.log(`[on-the-fly-healed] Created missing application for Candidate: ${candidate.fullName}, Spec: ${spec.name}, HT: ${hallTicketNumber}`);
+          }
+        }
+
+        // Re-query applications
+        apps = await db.select().from(applicationsTable).where(
+          and(
+            eq(applicationsTable.candidateId, candidate.id),
+            sql`${applicationsTable.status} IN ('approved', 'verified', 'scheduled', 'interviewed', 'completed')`
+          )
+        );
+      } catch (err) {
+        console.warn(`[on-the-fly-healed] Failed to heal candidate ${candidate.id}:`, err);
+      }
+    }
+
     if (apps.length === 0) return res.status(400).json({ error: "No active/approved applications found to print" });
 
     const specialities = await db.select().from(specialitiesTable);
