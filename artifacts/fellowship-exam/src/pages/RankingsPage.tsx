@@ -140,17 +140,17 @@ export default function RankingsPage() {
     const int = Number(weightInt);
 
     if (isNaN(mcq) || isNaN(psy) || isNaN(int)) {
-      toast({ title: "Invalid Inputs", description: "Weight values must be valid integers", variant: "destructive" });
+      toast({ title: "Invalid Inputs", description: "Marks values must be valid integers", variant: "destructive" });
       return;
     }
 
     if (mcq < 0 || psy < 0 || int < 0) {
-      toast({ title: "Invalid Weights", description: "Weightages cannot be negative", variant: "destructive" });
+      toast({ title: "Invalid Marks", description: "Marks values cannot be negative", variant: "destructive" });
       return;
     }
 
-    if (Math.abs(mcq + psy + int - 100) > 0.01) {
-      toast({ title: "Invalid Aggregate", description: "MCQ + Psychometric + Interview weights must sum to exactly 100%", variant: "destructive" });
+    if (Math.abs(mcq + psy + int - 110) > 0.01) {
+      toast({ title: "Invalid Aggregate", description: "MCQ + Mind Matters + VIVA marks must sum to exactly 110", variant: "destructive" });
       return;
     }
 
@@ -160,7 +160,7 @@ export default function RankingsPage() {
   const handleExportExcel = () => {
     const token = localStorage.getItem("fellowship_token");
     window.open(`/api/rankings/export?programId=${selectedProgram}&token=${token}`, "_blank");
-    toast({ title: "Export Protocol Triggered", description: "Downloading multi-sheet rankings report workbook..." });
+    toast({ title: "Export Protocol Triggered", description: "Downloading sub-specialization rankings report workbook..." });
   };
 
   const allocatedCount = rankings.filter((r) => r.status === "allocated" || r.status === "Accepted").length;
@@ -178,7 +178,7 @@ export default function RankingsPage() {
             </div>
             <h1 className="text-4xl font-extrabold tracking-tight">Merit Rankings</h1>
             <p className="text-indigo-100/80 max-w-md">
-              Review and manage NEET-style candidate standings. Recompute weighted aggregates, filter by specialization worksheets, and generate formal ranking books.
+              Review and manage fellowship candidate standings. Recompute weighted aggregates, filter by specialization worksheets, and generate sub-specialty ranking books.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -187,7 +187,7 @@ export default function RankingsPage() {
                 onClick={() => setIsWeightModalOpen(true)}
                 className="bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-2xl h-12 px-6 font-bold shadow-xl gap-2 backdrop-blur-md"
               >
-                <Sliders className="h-4 w-4 text-purple-200" /> Configure Weights
+                <Sliders className="h-4 w-4 text-purple-200" /> Configure Max Marks
               </Button>
             )}
             {selectedProgram && rankings.length > 0 && (
@@ -283,7 +283,7 @@ export default function RankingsPage() {
                 <CardHeader className="pb-3 border-b flex flex-row items-center justify-between">
                   <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
                     <Trophy className="h-4 w-4 text-amber-500" /> 
-                    {selectedTab === "overall" ? "Overall All-India Rank List" : `${specialities.find(s => String(s.id) === selectedTab)?.name} Specialty Rank List`}
+                    {selectedTab === "overall" ? "Overall Merit List" : `${specialities.find(s => String(s.id) === selectedTab)?.name} Specialty Rank List`}
                   </CardTitle>
                   <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => refetchRankings()}>
                     <RefreshCw className="h-3 w-3 animate-spin" /> Reload List
@@ -304,11 +304,12 @@ export default function RankingsPage() {
                               <th className="px-4 py-3.5 text-center">Segment Rank</th>
                             </>
                           )}
+                          <th className="px-4 py-3.5 text-left">Preferred Location</th>
                           <th className="px-4 py-3.5 text-left">Allocated Seat</th>
-                          <th className="px-3 py-3.5 text-right w-20">MCQ ({weights ? weights.mcq : 60}%)</th>
-                          <th className="px-3 py-3.5 text-right w-20">Psych ({weights ? weights.psychometric : 10}%)</th>
-                          <th className="px-3 py-3.5 text-right w-20">Interview ({weights ? weights.interview : 30}%)</th>
-                          <th className="px-4 py-3.5 text-right w-24 bg-slate-50/80">Final Merit Score</th>
+                          <th className="px-3 py-3.5 text-right w-20">MCQ ({weights ? weights.mcq : 50})</th>
+                          <th className="px-3 py-3.5 text-right w-20">Mind Matters ({weights ? weights.psychometric : 10})</th>
+                          <th className="px-3 py-3.5 text-right w-20">VIVA ({weights ? weights.interview : 50})</th>
+                          <th className="px-4 py-3.5 text-right w-24 bg-slate-50/80">Total Marks (110)</th>
                           <th className="px-4 py-3.5 text-center w-24">Counselling Status</th>
                         </tr>
                       </thead>
@@ -363,6 +364,20 @@ export default function RankingsPage() {
                               )}
 
                               <td className="px-4 py-4 text-left">
+                                {r.preferredLocations && r.preferredLocations.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {r.preferredLocations.map((loc) => (
+                                      <Badge key={loc} variant="secondary" className="text-[10px] font-bold bg-indigo-50 text-indigo-700 border-indigo-100">
+                                        {loc}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-300 text-xs">—</span>
+                                )}
+                              </td>
+
+                              <td className="px-4 py-4 text-left">
                                 {r.unitName ? (
                                   <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
                                     <Sparkles className="h-3 w-3 text-indigo-500" />
@@ -412,10 +427,10 @@ export default function RankingsPage() {
           <DialogHeader>
             <DialogTitle className="text-xl font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
               <Sliders className="h-5 w-5 text-purple-600 animate-pulse" />
-              Weightages Protocol Setup
+              Max Marks Setup
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400 uppercase tracking-wider font-bold">
-              Adjust parameters for computed rankings tie-breaking and seat allotting
+              Adjust absolute marks parameters for merit rankings and seat allocation
             </DialogDescription>
           </DialogHeader>
 
@@ -423,13 +438,13 @@ export default function RankingsPage() {
             <div className="bg-purple-50 rounded-2xl p-4 border border-purple-100 flex items-center gap-3">
               <CheckCircle2 className="h-5 w-5 text-purple-500 shrink-0" />
               <p className="text-xs text-purple-900 font-bold leading-relaxed uppercase">
-                The total sum of MCQ, Psychometric, and interview weights must equal exactly 100%. Changing weights will recalculate all applicant matrices atomically.
+                The total sum of MCQ, Mind Matters, and VIVA marks must equal exactly 110. Changing marks will scale all applicant scores atomically.
               </p>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">MCQ weight %</Label>
+                <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">MCQ Max Marks</Label>
                 <Input 
                   type="number"
                   value={weightMcq}
@@ -439,7 +454,7 @@ export default function RankingsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Psych weight %</Label>
+                <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Mind Matters</Label>
                 <Input 
                   type="number"
                   value={weightPsy}
@@ -449,7 +464,7 @@ export default function RankingsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Interview %</Label>
+                <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">VIVA Marks</Label>
                 <Input 
                   type="number"
                   value={weightInt}
@@ -462,12 +477,12 @@ export default function RankingsPage() {
             {/* Sum validation display */}
             {(() => {
               const sum = (Number(weightMcq) || 0) + (Number(weightPsy) || 0) + (Number(weightInt) || 0);
-              const isValid = Math.abs(sum - 100) < 0.01;
+              const isValid = Math.abs(sum - 110) < 0.01;
               return (
                 <div className={`p-3.5 rounded-xl border text-center font-bold text-xs uppercase tracking-widest ${
                   isValid ? "bg-emerald-50 border-emerald-100 text-emerald-700" : "bg-rose-50 border-rose-100 text-rose-700"
                 }`}>
-                  Current Aggregate Sum: <span className="font-mono">{sum}%</span> {isValid ? "— VALID PROTOCOL" : "— SUM MUST EQUAL 100%"}
+                  Current Aggregate Sum: <span className="font-mono">{sum}</span> {isValid ? "— VALID PROTOCOL" : "— SUM MUST EQUAL 110"}
                 </div>
               );
             })()}
@@ -483,7 +498,7 @@ export default function RankingsPage() {
               disabled={saveWeightsMutation.isPending}
             >
               {saveWeightsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-              Commit Weight Settings
+              Commit Setup Settings
             </Button>
           </DialogFooter>
         </DialogContent>

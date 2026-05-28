@@ -87,6 +87,13 @@ export default function BatchesPage() {
     queryFn: () => api.get<any[]>("/programs"),
   });
 
+  const { data: specialitiesList = [] } = useQuery({
+    queryKey: ["specialities-list"],
+    queryFn: () => api.get<any[]>("/specialities"),
+  });
+
+  const uniqueSpecNames = Array.from(new Set(specialitiesList.map((s: any) => s.name)));
+
   const { data: units = [] } = useQuery({
     queryKey: ["units"],
     queryFn: () => api.get<any[]>("/units"),
@@ -237,11 +244,12 @@ export default function BatchesPage() {
                       <div className="space-y-2">
                         <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Speciality Segment</Label>
                         <select name="segment" className="w-full h-14 rounded-2xl border-2 border-slate-100 bg-white px-4 text-sm font-bold uppercase focus:border-primary/20 transition-all outline-none" required>
+                          <option value="General">General</option>
                           <option value="Retina">Retina</option>
                           <option value="Anterior Segment">Anterior Segment</option>
-                          <option value="Glaucoma">Glaucoma</option>
-                          <option value="Cornea">Cornea</option>
-                          <option value="General">General</option>
+                          {uniqueSpecNames.map((name: any) => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="space-y-2">

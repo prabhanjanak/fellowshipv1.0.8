@@ -25,7 +25,7 @@ router.get(
         res.json(JSON.parse(setting.value));
       } else {
         // Return default weights
-        res.json({ mcq: 60, psychometric: 10, interview: 30 });
+        res.json({ mcq: 50, psychometric: 10, interview: 50 });
       }
     } catch (e) {
       res.status(500).json({ error: String(e) });
@@ -48,8 +48,8 @@ router.post(
       }
 
       const sum = Number(mcq) + Number(psychometric) + Number(interview);
-      if (Math.abs(sum - 100) > 0.01) {
-        res.status(400).json({ error: "Weightages must sum to exactly 100%" });
+      if (Math.abs(sum - 110) > 0.01) {
+        res.status(400).json({ error: "Marks must sum to exactly 110" });
         return;
       }
 
@@ -160,62 +160,30 @@ router.get(
 
       const wb = XLSX.utils.book_new();
 
-      // Create a master / overall rank worksheet
-      const masterRows = scores.map((s, idx) => {
-        const topSpecId = s.preferenceSpecIds[0];
-        const topSpec = topSpecId ? specs.find((x) => x.id === topSpecId) : null;
-        const alloc = allocations.find(a => a.candidateId === s.candidateId);
-        const unit = alloc?.unitId ? units.find((u) => u.id === alloc.unitId) : null;
-        const cand = candidates.find((c) => c.id === s.candidateId);
-
-        return {
-          "Rank": idx + 1,
-          "Candidate Name": s.fullName,
-          "Hall Ticket ID": s.candidateCode,
-          "Mobile Number": cand?.phone ?? "",
-          "Email ID": cand?.email ?? "",
-          "MCQ Marks": Number(s.mcqScore.toFixed(1)),
-          "Psychometric Marks": Number(s.psychometricScore.toFixed(1)),
-          "Interview Marks": Number(s.interviewScore.toFixed(1)),
-          "Final Merit Score": Number(s.totalScore.toFixed(2)),
-          "Category": cand?.qualification ?? "General",
-          "Preferred Locations": topSpecId ? (s.preferredLocations[topSpecId] ?? []).join(", ") : "None",
-          "Allocation Status": alloc ? `${alloc.status} - ${unit?.name || "No Center"}` : "Not Allocated"
-        };
-      });
-
-      const wsMaster = XLSX.utils.json_to_sheet(masterRows);
-      wsMaster["!cols"] = masterRows[0] ? Object.keys(masterRows[0]).map(() => ({ wch: 22 })) : [];
-      XLSX.utils.book_append_sheet(wb, wsMaster, "Overall Merit Rankings");
-
-      // Generate separate rank sheets for each specialization
+      // Generate separate rank sheets for each specialization (No master/overall sheet as per user request)
       for (const spec of specs) {
         const specCandidates = scores.filter(s => s.specialityScores[spec.id] !== undefined);
         
         // Sort by specialty rank
         specCandidates.sort((a, b) => (a.specialityRanks[spec.id] ?? 999) - (b.specialityRanks[spec.id] ?? 999));
 
-        const specRows = specCandidates.map(s => {
-          const rank = s.specialityRanks[spec.id] ?? 999;
+        const specRows = specCandidates.map((s, idx) => {
+          const rank = s.specialityRanks[spec.id] ?? (idx + 1);
           const score = s.specialityScores[spec.id] ?? 0;
           const intScore = s.specialityInterviewScores[spec.id] ?? 0;
-          const alloc = allocations.find(a => a.candidateId === s.candidateId && a.specialityId === spec.id);
-          const unit = alloc?.unitId ? units.find((u) => u.id === alloc.unitId) : null;
           const cand = candidates.find((c) => c.id === s.candidateId);
 
           return {
-            "Rank": rank,
+            "S.No": rank,
             "Candidate Name": s.fullName,
-            "Hall Ticket ID": s.candidateCode,
-            "Mobile Number": cand?.phone ?? "",
-            "Email ID": cand?.email ?? "",
-            "MCQ Marks": Number(s.mcqScore.toFixed(1)),
-            "Psychometric Marks": Number(s.psychometricScore.toFixed(1)),
-            "Interview Marks": Number(intScore.toFixed(1)),
-            "Final Merit Score": Number(score.toFixed(2)),
-            "Category": cand?.qualification ?? "General",
-            "Preferred Locations": (s.preferredLocations[spec.id] ?? []).join(", "),
-            "Allocation Status": alloc ? `${alloc.status} - ${unit?.name || "No Center"}` : "Not Allocated"
+            "Origin Place": cand?.address ?? "",
+            "Choice of Seat": spec.name,
+            "For Location": (s.preferredLocations[spec.id] ?? []).join(", "),
+            "MCQ's 50": Number(s.mcqScore.toFixed(1)),
+            "Mind Matters 10": Number(s.psychometricScore.toFixed(1)),
+            "VIVA 50": Number(intScore.toFixed(1)),
+            "Total Marks 110": Number(score.toFixed(2)),
+            "Rank Position": rank
           };
         });
 
@@ -228,7 +196,7 @@ router.get(
 
       const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
       const date = new Date().toISOString().split("T")[0];
-      res.setHeader("Content-Disposition", `attachment; filename=SAV_Merit_Rank_Sheets_${date}.xlsx`);
+      res.setHeader("Content-Disposition", `attachment; filename=SAV_SubSpeciality_Rank_Sheets_${date}.xlsx`);
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.send(buf);
     } catch (e) {

@@ -7,7 +7,9 @@ import {
   interviewScoresTable, 
   specialitiesTable, 
   globalSettingsTable,
-  applicationSubmissionsTable
+  applicationSubmissionsTable,
+  batchesTable,
+  batchCandidatesTable
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -46,22 +48,24 @@ export async function computeScoresForProgram(programId: number): Promise<Candid
   const prefs = await db.select().from(candidatePreferencesTable);
   const specs = await db.select().from(specialitiesTable).where(eq(specialitiesTable.programId, programId));
   const submissions = await db.select().from(applicationSubmissionsTable);
+  const batches = await db.select().from(batchesTable);
+  const batchCandidates = await db.select().from(batchCandidatesTable);
   const programSpecIds = new Set(specs.map((s) => s.id));
 
   // 1. Retrieve dynamic weight configurations from global settings
-  let wMcq = 0.60;
-  let wPsy = 0.10;
-  let wInt = 0.30;
+  let wMcq = 50;
+  let wPsy = 10;
+  let wInt = 50;
   try {
     const [setting] = await db.select().from(globalSettingsTable).where(eq(globalSettingsTable.key, "merit_weights"));
     if (setting) {
       const parsed = JSON.parse(setting.value);
-      if (parsed.mcq !== undefined) wMcq = Number(parsed.mcq) / 100;
-      if (parsed.psychometric !== undefined) wPsy = Number(parsed.psychometric) / 100;
-      if (parsed.interview !== undefined) wInt = Number(parsed.interview) / 100;
+      if (parsed.mcq !== undefined) wMcq = Number(parsed.mcq);
+      if (parsed.psychometric !== undefined) wPsy = Number(parsed.psychometric);
+      if (parsed.interview !== undefined) wInt = Number(parsed.interview);
     }
   } catch (e) {
-    console.error("Failed to load merit weights, using default 60/10/30 weights config", e);
+    console.error("Failed to load merit weights, using default 50/10/50 weights config", e);
   }
 
   const result: CandidateScore[] = [];
@@ -81,12 +85,29 @@ export async function computeScoresForProgram(programId: number): Promise<Candid
     const mcqScore = mcqs.length > 0 ? mcqs.reduce((s, a) => s + (a.score ?? 0), 0) / mcqs.length : (Number(c.mcqScore) || 0);
     const psychoScore = psychos.length > 0 ? psychos.reduce((s, a) => s + (a.score ?? 0), 0) / psychos.length : (Number(c.psychometricScore) || 0);
 
-    const sub = submissions.find(s => s.email === c.email || s.candidateId === c.id);
+    // Dynamic Batch and Max Marks Lookup
+    const bc = batchCandidates.find(x => x.candidateId === c.id);
+    const batch = bc ? batches.find(b => b.id === bc.batchId) : null;
+
+    const mcqMax = batch?.mcqTotalMarks || 50;
+    const psychoMax = batch?.psychometricTotalMarks || 50;
+    const interviewMax = batch?.interviewTotalMarks || 100;
+
+    // Scale scores dynamically
+    const scaledMcq = mcqMax > 0 ? (mcqScore * wMcq) / mcqMax : mcqScore;
+    const scaledPsycho = psychoMax > 0 ? (psychoScore * wPsy) / psychoMax : psychoScore;
+
+    // Handle multiple submissions by selecting the LATEST submission by submittedAt
+    const candidateSubmissions = submissions
+      .filter(s => s.email?.toLowerCase() === c.email?.toLowerCase() || s.candidateId === c.id)
+      .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+    const sub = candidateSubmissions[0];
+
     const appliedAt = sub?.submittedAt ? sub.submittedAt.toISOString() : (c.createdAt ? new Date(c.createdAt).toISOString() : new Date().toISOString());
 
     // Parse location preferences from submission centerPreference
     const preferredLocations: Record<number, string[]> = {};
-    let parsedCp: Record<string, string[]> = {};
+    let parsedCp: Record<string, any> = {};
     if (sub?.centerPreference) {
       try {
         parsedCp = JSON.parse(sub.centerPreference);
@@ -103,19 +124,44 @@ export async function computeScoresForProgram(programId: number): Promise<Candid
       const spec = specs.find(s => s.id === p.specialityId);
       if (!spec) continue;
 
-      // Extract locations array for this specialty preference
+      // Extract locations array for this specialty preference cleanly
       let locations: string[] = [];
-      if (parsedCp[spec.name]) {
-        locations = Array.isArray(parsedCp[spec.name]) ? parsedCp[spec.name]! : [String(parsedCp[spec.name])];
-      } else {
-        // Find custom_answers like unit_cornea preferences
-        const customUnitKey = `unit_${spec.name.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
-        const answerVal = sub?.customAnswers?.[customUnitKey];
-        if (answerVal) {
-          locations = Array.isArray(answerVal) ? answerVal : [String(answerVal)];
+      let rawLocVal: any = null;
+
+      if (parsedCp && parsedCp[spec.name]) {
+        rawLocVal = parsedCp[spec.name];
+      } else if (sub?.centerPreference) {
+        try {
+          const directParsed = JSON.parse(sub.centerPreference);
+          if (directParsed && typeof directParsed === "object" && !Array.isArray(directParsed)) {
+            rawLocVal = directParsed[spec.name];
+          } else {
+            rawLocVal = sub.centerPreference;
+          }
+        } catch {
+          rawLocVal = sub.centerPreference;
         }
       }
-      preferredLocations[p.specialityId] = locations.map(l => l.trim());
+
+      if (!rawLocVal) {
+        const customUnitKey = `unit_${spec.name.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+        rawLocVal = sub?.customAnswers?.[customUnitKey];
+      }
+
+      if (rawLocVal) {
+        if (Array.isArray(rawLocVal)) {
+          locations = rawLocVal;
+        } else if (typeof rawLocVal === "string") {
+          locations = rawLocVal.split(",").map(l => l.trim()).filter(Boolean);
+        } else {
+          locations = [String(rawLocVal)];
+        }
+      }
+      
+      // Filter out any empty, null, or "Not Applicable" choices
+      preferredLocations[p.specialityId] = locations
+        .map(l => l.trim())
+        .filter(l => l && l.toLowerCase() !== "not applicable" && l.toLowerCase() !== "none");
 
       // Average interview scores across all panel doctors independently
       const specInterviews = interviews.filter((i) => i.candidateId === c.id && i.specialityId === p.specialityId);
@@ -123,22 +169,25 @@ export async function computeScoresForProgram(programId: number): Promise<Candid
         ? specInterviews.reduce((s, i) => s + i.score, 0) / specInterviews.length 
         : 0;
 
-      // Weighted aggregate score calculation
-      const specTotalScore = (mcqScore * wMcq) + (psychoScore * wPsy) + (avgInterview * wInt);
+      // Scale Interview (VIVA) score
+      const scaledInterview = interviewMax > 0 ? (avgInterview * wInt) / interviewMax : avgInterview;
+
+      // Sum scaled scores to get final total score (out of 110)
+      const specTotalScore = scaledMcq + scaledPsycho + scaledInterview;
 
       specialityScores[p.specialityId] = specTotalScore;
-      specialityInterviewScores[p.specialityId] = avgInterview;
+      specialityInterviewScores[p.specialityId] = scaledInterview;
 
       if (specTotalScore > maxTotalScore) maxTotalScore = specTotalScore;
-      if (avgInterview > maxInterviewScore) maxInterviewScore = avgInterview;
+      if (scaledInterview > maxInterviewScore) maxInterviewScore = scaledInterview;
     }
 
     result.push({
       candidateId: c.id,
       candidateCode: c.candidateCode,
       fullName: c.fullName,
-      mcqScore,
-      psychometricScore: psychoScore,
+      mcqScore: scaledMcq,
+      psychometricScore: scaledPsycho,
       interviewScore: maxInterviewScore,
       totalScore: maxTotalScore,
       preferenceSpecIds: candPrefs.map((p) => p.specialityId),
