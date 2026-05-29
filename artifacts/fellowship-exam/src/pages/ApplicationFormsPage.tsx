@@ -172,6 +172,106 @@ function parseCenterPreferences(cp: string | null | undefined, customAnswers?: a
   return {};
 }
 
+/** Unified function to match and format all candidate specializations with their selected center preferences */
+function getFormattedSpecialityPrefs(
+  specializationStr: string | null | undefined,
+  centerPreferenceStr: string | null | undefined,
+  formData: any,
+  customAnswers: any,
+  sectionsConfig?: any[]
+): { spec: string; location: string | null }[] {
+  const specs = parseSpecializations(specializationStr);
+  if (specs.length === 0) return [];
+
+  const prefs: Record<string, string> = {};
+
+  if (centerPreferenceStr) {
+    try {
+      const parsed = JSON.parse(centerPreferenceStr);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        Object.entries(parsed).forEach(([k, v]) => {
+          prefs[k] = Array.isArray(v) ? v.join(", ") : String(v);
+        });
+      }
+    } catch { /* not JSON */ }
+  }
+
+  const extractUnitFields = (obj: any) => {
+    if (obj && typeof obj === "object") {
+      Object.entries(obj).forEach(([key, val]) => {
+        if (key.startsWith("unit_") && val) {
+          let label = key.replace("unit_", "").replace(/_/g, " ").toUpperCase();
+          if (sectionsConfig) {
+            sectionsConfig.forEach((sec: any) => {
+              sec.fields?.forEach((f: any) => {
+                if (f.id === key && f.label) {
+                  label = f.label.replace(" Preferred Center", "");
+                }
+              });
+            });
+          }
+          prefs[label] = Array.isArray(val) ? val.join(", ") : String(val);
+        }
+      });
+    }
+  };
+
+  extractUnitFields(formData);
+  extractUnitFields(customAnswers);
+  if (formData && formData.formData) {
+    extractUnitFields(formData.formData);
+  }
+
+  const normalize = (str: string): string => {
+    return str.toLowerCase().replace(/[^a-z0-9]/g, "");
+  };
+
+  const normalizedPrefs: Record<string, string> = {};
+  Object.entries(prefs).forEach(([k, v]) => {
+    normalizedPrefs[normalize(k)] = v;
+    if (k.startsWith("unit_")) {
+      normalizedPrefs[normalize(k.substring(5))] = v;
+    }
+  });
+
+  const result: { spec: string; location: string | null }[] = [];
+  specs.forEach(spec => {
+    const normSpec = normalize(spec);
+    let loc = normalizedPrefs[normSpec];
+
+    if (!loc) {
+      const key = Object.keys(normalizedPrefs).find(k => k.includes(normSpec) || normSpec.includes(k));
+      if (key) {
+        loc = normalizedPrefs[key];
+      }
+    }
+
+    if (!loc && centerPreferenceStr) {
+      const trimmedCp = centerPreferenceStr.trim();
+      if (!trimmedCp.startsWith("{") && !trimmedCp.startsWith("[") && trimmedCp !== "0" && trimmedCp.toLowerCase() !== "not applicable") {
+        loc = trimmedCp;
+      }
+    }
+
+    if (loc && (loc.toLowerCase().trim() === "not applicable" || loc.toLowerCase().trim() === "not_applicable")) {
+      loc = "";
+    }
+
+    result.push({
+      spec,
+      location: loc ? loc.trim() : null
+    });
+  });
+
+  return result;
+}
+
+/** Retrieve all valid, applied-for specializations by looking at center preference locations */
+function parseActualSpecializations(s: any): string[] {
+  if (!s) return [];
+  return parseSpecializations(s.specialization);
+}
+
 function SubmissionFormDataEditor({ sectionsConfig, formData, onChange, onFileUpload }: { sectionsConfig: any[], formData: any, onChange: (newData: any) => void, onFileUpload?: (field: string, url: string) => void }) {
   const updateField = (id: string, mapping: string | undefined, value: any, isStandard?: boolean) => {
     if (isStandard && mapping) {
@@ -570,6 +670,17 @@ const SPEC_BADGE_COLORS: Record<string, string> = {
   "Oculoplasty": "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
   "Pediatric Ophthalmology": "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300",
   "Phaco Refractive": "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+};
+
+const getSpecColorClass = (sp: string) => {
+  const norm = sp.trim().toLowerCase();
+  for (const [k, v] of Object.entries(SPEC_BADGE_COLORS)) {
+    const kNorm = k.toLowerCase();
+    if (kNorm === norm || kNorm.includes(norm) || norm.includes(kNorm)) {
+      return v;
+    }
+  }
+  return "bg-slate-100 text-slate-600";
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -1567,10 +1678,12 @@ export default function ApplicationFormsPage() {
              {/* Candidate Details & Photo Placement (Below Header, Photo on the Right) */}
              <div className="hidden print:grid grid-cols-12 gap-6 items-start pb-6 mb-6 border-b border-slate-200">
                 <div className="col-span-8 space-y-4">
-                   <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-[#0b4a8f] leading-none mb-1">Applicant Registration Number</p>
-                      <p className="text-xl font-black text-slate-900 font-mono tracking-wider">{viewedSub.candidateCode || "PENDING"}</p>
-                   </div>
+                    {viewedSub.candidateCode && viewedSub.candidateCode !== "PENDING" && (
+                       <div>
+                          <p className="text-[9px] font-black uppercase tracking-widest text-[#0b4a8f] leading-none mb-1">Applicant Registration Number</p>
+                          <p className="text-xl font-black text-slate-900 font-mono tracking-wider">{viewedSub.candidateCode}</p>
+                       </div>
+                    )}
                    <div className="grid grid-cols-2 gap-4">
                       <div>
                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none mb-1">Full Name of Applicant</p>
@@ -1975,7 +2088,7 @@ export default function ApplicationFormsPage() {
 
     const filteredSubs = submissions.filter((s) => {
       const statusMatch = statusFilter === "all" ? true : s.status === statusFilter;
-      const specMatch = specFilter === "all" ? true : parseSpecializations(s.specialization).includes(specFilter);
+      const specMatch = specFilter === "all" ? true : parseActualSpecializations(s).includes(specFilter);
       return statusMatch && specMatch;
     });
 
@@ -1993,14 +2106,14 @@ export default function ApplicationFormsPage() {
     });
     
     // Get unique specializations for filter
-    const allSpecs = Array.from(new Set(submissions.flatMap(s => parseSpecializations(s.specialization)))).sort();
+    const allSpecs = Array.from(new Set(submissions.flatMap(s => parseActualSpecializations(s)))).sort();
 
     const allFilteredSelected = filteredSubs.length > 0 && filteredSubs.every((s) => selectedIds.includes(s.id));
     const toggleSelectAll = () => {
       if (allFilteredSelected) setSelectedIds([]);
       else setSelectedIds(filteredSubs.map((s) => s.id));
     };
-    const totalApplications = submissions.reduce((acc, s) => acc + parseSpecializations(s.specialization).length, 0);
+    const totalApplications = submissions.reduce((acc, s) => acc + parseActualSpecializations(s).length, 0);
     const totalApplicants = submissions.length;
     const approvedCandidatesCount = submissions.filter(s => ['approved', 'verified', 'scheduled', 'interviewed', 'completed'].includes(s.status)).length;
     const pendingCount = submissions.filter(s => s.status === 'pending').length;
@@ -2018,7 +2131,7 @@ export default function ApplicationFormsPage() {
     let orbitCount = 0;
 
     submissions.forEach(s => {
-      const specs = parseSpecializations(s.specialization);
+      const specs = parseActualSpecializations(s);
       specs.forEach(spec => {
         const lower = spec.toLowerCase();
         if (lower.includes("vitreo retina") || lower.includes("vitreoretinal")) {
@@ -2139,11 +2252,11 @@ export default function ApplicationFormsPage() {
               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Today's Apps</div>
             </div>
             <div className="text-center md:text-left">
-              <div className="text-2xl font-black text-indigo-400">{submissions.filter(s => new Date(s.submittedAt).toLocaleDateString("en-IN") === today && parseSpecializations(s.specialization).some(sp => sp.toLowerCase().includes("retina"))).length}</div>
+              <div className="text-2xl font-black text-indigo-400">{submissions.filter(s => new Date(s.submittedAt).toLocaleDateString("en-IN") === today && parseActualSpecializations(s).some(sp => sp.toLowerCase().includes("retina"))).length}</div>
               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Retina Today</div>
             </div>
             <div className="text-center md:text-left">
-              <div className="text-2xl font-black text-emerald-400">{submissions.filter(s => new Date(s.submittedAt).toLocaleDateString("en-IN") === today && !parseSpecializations(s.specialization).some(sp => sp.toLowerCase().includes("retina"))).length}</div>
+              <div className="text-2xl font-black text-emerald-400">{submissions.filter(s => new Date(s.submittedAt).toLocaleDateString("en-IN") === today && !parseActualSpecializations(s).some(sp => sp.toLowerCase().includes("retina"))).length}</div>
               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Anterior Today</div>
             </div>
             <div className="text-center md:text-left">
@@ -2232,7 +2345,7 @@ export default function ApplicationFormsPage() {
             </div>
             <div className="mt-8 flex justify-between items-center text-[10px] text-slate-500 border-t border-slate-800/60 pt-4">
               <span>Dynamic tracking active</span>
-              <span>Unique Segment Candidates: {submissions.filter(s => parseSpecializations(s.specialization).some(sp => sp.toLowerCase().includes("retina"))).length}</span>
+              <span>Unique Segment Candidates: {submissions.filter(s => parseActualSpecializations(s).some(sp => sp.toLowerCase().includes("retina"))).length}</span>
             </div>
           </div>
 
@@ -2277,7 +2390,7 @@ export default function ApplicationFormsPage() {
             </div>
             <div className="mt-8 flex justify-between items-center text-[10px] text-slate-500 border-t border-slate-800/60 pt-4">
               <span>Dynamic tracking active</span>
-              <span>Unique Segment Candidates: {submissions.filter(s => !parseSpecializations(s.specialization).some(sp => sp.toLowerCase().includes("retina"))).length}</span>
+              <span>Unique Segment Candidates: {submissions.filter(s => !parseActualSpecializations(s).some(sp => sp.toLowerCase().includes("retina"))).length}</span>
             </div>
           </div>
         </div>
@@ -2458,36 +2571,38 @@ export default function ApplicationFormsPage() {
                            {s.readyForReview && <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />}
                         </span>
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{s.email}</span>
-                        {s.centerPreference && (() => {
-                          const prefs = parseCenterPreferences(s.centerPreference, s.formData);
-                          const entries = Object.entries(prefs);
-                          if (entries.length > 0) {
+                        {(() => {
+                          const prefs = getFormattedSpecialityPrefs(s.specialization, s.centerPreference, s.formData, s.customAnswers, viewedForm?.sectionsConfig);
+                          if (prefs.length > 0) {
                             return (
                               <div className="flex flex-wrap gap-1 mt-1">
-                                {entries.map(([spec, loc]) => (
+                                {prefs.map(({ spec, location }) => (
                                   <span key={spec} className="text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-100 rounded-full px-2 py-0.5">
-                                    {spec}: {loc}
+                                    {location ? `${spec}: ${location}` : spec}
                                   </span>
                                 ))}
                               </div>
                             );
                           }
-                          return <span className="text-[10px] text-slate-400 mt-0.5">{s.centerPreference}</span>;
+                          return null;
                         })()}
                       </div>
                     </td>
                     <td className="px-6 py-5">
                       {(() => {
-                        const specs = parseSpecializations(s.specialization);
-                        return (
-                          <div className="flex flex-wrap gap-1.5">
-                            {specs.map((sp) => (
-                              <Badge key={sp} className={`${SPEC_BADGE_COLORS[sp] ?? "bg-slate-100 text-slate-600"} rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-tight border-none`}>
-                                 {sp}
-                              </Badge>
-                            ))}
-                          </div>
-                        );
+                        const prefs = getFormattedSpecialityPrefs(s.specialization, s.centerPreference, s.formData, s.customAnswers, viewedForm?.sectionsConfig);
+                        if (prefs.length > 0) {
+                          return (
+                            <div className="flex flex-wrap gap-1.5">
+                              {prefs.map(({ spec, location }) => (
+                                <Badge key={spec} className={`${getSpecColorClass(spec)} rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-tight border-none`}>
+                                   {location ? `${spec}: ${location}` : spec}
+                                </Badge>
+                              ))}
+                            </div>
+                          );
+                        }
+                        return <span className="text-slate-400 text-xs">-</span>;
                       })()}
                     </td>
                     <td className="px-6 py-5">

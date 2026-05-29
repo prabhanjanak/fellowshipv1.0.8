@@ -12,6 +12,7 @@ export const interviewPanelsTable = pgTable("interview_panels", {
   specialityId: integer("speciality_id").references(() => specialitiesTable.id),
   isActive: boolean("is_active").notNull().default(true),
   isMock: boolean("is_mock").notNull().default(false),
+  isMindMatter: boolean("is_mind_matter").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

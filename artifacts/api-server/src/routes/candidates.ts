@@ -207,6 +207,7 @@ router.get("/candidates", requireAuth, requireRole("super_admin", "program_admin
   const allDocs = await db.select().from(documentsTable);
   const allSubmissions = await db.select().from(applicationSubmissionsTable);
   const allApplications = await db.select().from(applicationsTable);
+  const allScores = await db.select().from(interviewScoresTable);
 
   const out = candidates.map((c) => {
     const unit = c.unitId ? units.find((u) => u.id === c.unitId) : null;
@@ -236,10 +237,19 @@ router.get("/candidates", requireAuth, requireRole("super_admin", "program_admin
       status: c.status,
       specializations,
       documents,
-      mcqScore: null,
-      psychometricScore: null,
-      interviewScore: null,
-      totalScore: null,
+      mcqScore: c.mcqScore ? parseFloat(c.mcqScore) : null,
+      psychometricScore: c.psychometricScore ? parseFloat(c.psychometricScore) : null,
+      interviewScore: (() => {
+        const candScores = allScores.filter((s: any) => s.candidateId === c.id);
+        return candScores.length > 0 ? candScores.reduce((acc: number, s: any) => acc + s.score, 0) / candScores.length : null;
+      })(),
+      totalScore: (() => {
+        const mcq = c.mcqScore ? parseFloat(c.mcqScore) : null;
+        const psy = c.psychometricScore ? parseFloat(c.psychometricScore) : null;
+        const candScores = allScores.filter((s: any) => s.candidateId === c.id);
+        const intv = candScores.length > 0 ? candScores.reduce((acc: number, s: any) => acc + s.score, 0) / candScores.length : null;
+        return (mcq !== null || psy !== null || intv !== null) ? (mcq ?? 0) + (psy ?? 0) + (intv ?? 0) : null;
+      })(),
       rank: null,
       createdAt: c.createdAt.toISOString(),
       dateOfBirth: formatDOBToStandard(c.dateOfBirth),
@@ -396,6 +406,7 @@ router.get("/candidates/export", requireAuth, requireRole("super_admin", "progra
     const allPrefs     = await db.select().from(candidatePreferencesTable);
     const allSpecs     = await db.select().from(specialitiesTable);
     const allSubmissions = await db.select().from(applicationSubmissionsTable);
+    const allForms     = await db.select().from(applicationFormsTable);
 
     const resolvedCandidates = candidates.map((c) => {
       const unit  = c.unitId ? units.find((u) => u.id === c.unitId) : null;
@@ -405,11 +416,123 @@ router.get("/candidates/export", requireAuth, requireRole("super_admin", "progra
       let specializations = prefs
         .map((p) => allSpecs.find((s) => s.id === p.specialityId)?.name ?? "")
         .filter(Boolean);
-      if (specializations.length === 0) {
-        const sub = allSubmissions.find(s => s.email?.toLowerCase() === c.email?.toLowerCase());
-        if (sub?.specialization) specializations = parseSpecializationString(sub.specialization);
-      }
       const submission = allSubmissions.find(s => s.email?.toLowerCase() === c.email?.toLowerCase());
+      
+      let activeSpecializations = specializations;
+      if (submission?.specialization) {
+        activeSpecializations = parseSpecializationString(submission.specialization);
+      }
+
+      const getFormattedSpecialityPrefs = (
+        specs: string[],
+        centerPreferenceStr: string | null | undefined,
+        formData: any,
+        customAnswers: any,
+        sectionsConfig?: any[]
+      ): { spec: string; location: string | null }[] => {
+        if (specs.length === 0) return [];
+
+        const prefs: Record<string, string> = {};
+
+        if (centerPreferenceStr) {
+          try {
+            const parsed = JSON.parse(centerPreferenceStr);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              Object.entries(parsed).forEach(([k, v]) => {
+                prefs[k] = Array.isArray(v) ? v.join(", ") : String(v);
+              });
+            }
+          } catch { /* not JSON */ }
+        }
+
+        const extractUnitFields = (obj: any) => {
+          if (obj && typeof obj === "object") {
+            Object.entries(obj).forEach(([key, val]) => {
+              if (key.startsWith("unit_") && val) {
+                let label = key.replace("unit_", "").replace(/_/g, " ").toUpperCase();
+                if (sectionsConfig) {
+                  sectionsConfig.forEach((sec: any) => {
+                    sec.fields?.forEach((f: any) => {
+                      if (f.id === key && f.label) {
+                        label = f.label.replace(" Preferred Center", "");
+                      }
+                    });
+                  });
+                }
+                prefs[label] = Array.isArray(val) ? val.join(", ") : String(val);
+              }
+            });
+          }
+        };
+
+        extractUnitFields(formData);
+        extractUnitFields(customAnswers);
+        if (formData && formData.formData) {
+          extractUnitFields(formData.formData);
+        }
+
+        const normalize = (str: string): string => {
+          return str.toLowerCase().replace(/[^a-z0-9]/g, "");
+        };
+
+        const normalizedPrefs: Record<string, string> = {};
+        Object.entries(prefs).forEach(([k, v]) => {
+          normalizedPrefs[normalize(k)] = v;
+          if (k.startsWith("unit_")) {
+            normalizedPrefs[normalize(k.substring(5))] = v;
+          }
+        });
+
+        const result: { spec: string; location: string | null }[] = [];
+        specs.forEach(spec => {
+          const normSpec = normalize(spec);
+          let loc = normalizedPrefs[normSpec];
+
+          if (!loc) {
+            const key = Object.keys(normalizedPrefs).find(k => k.includes(normSpec) || normSpec.includes(k));
+            if (key) {
+              loc = normalizedPrefs[key];
+            }
+          }
+
+          if (!loc && centerPreferenceStr) {
+            const trimmedCp = centerPreferenceStr.trim();
+            if (!trimmedCp.startsWith("{") && !trimmedCp.startsWith("[") && trimmedCp !== "0" && trimmedCp.toLowerCase() !== "not applicable") {
+              loc = trimmedCp;
+            }
+          }
+
+          if (loc && (loc.toLowerCase().trim() === "not applicable" || loc.toLowerCase().trim() === "not_applicable")) {
+            loc = "";
+          }
+
+          result.push({
+            spec,
+            location: loc ? loc.trim() : null
+          });
+        });
+
+        return result;
+      };
+
+      const form = submission ? allForms.find(f => f.id === submission.formId) : null;
+      const caParsed = {
+        ...((submission?.formData as Record<string, any>) || {}),
+        ...((submission?.customAnswers as Record<string, any>) || {})
+      };
+
+      const specPrefs = getFormattedSpecialityPrefs(
+        activeSpecializations,
+        submission?.centerPreference,
+        caParsed,
+        submission?.customAnswers,
+        form?.sectionsConfig ?? undefined
+      );
+
+      const specWithCentersList = specPrefs.map(({ spec, location }) => location ? `${spec}: ${location}` : spec);
+      const specWithCentersString = specWithCentersList.length > 0 ? specWithCentersList.join("; ") : activeSpecializations.join(", ");
+      const centerPrefsString = specPrefs.filter(p => p.location).map(({ spec, location }) => `${spec}: ${location}`).join("; ") || "N/A";
+      const finalSpecializations = specPrefs.map(p => p.spec);
 
       return {
         id: c.id,
@@ -423,8 +546,9 @@ router.get("/candidates/export", requireAuth, requireRole("super_admin", "progra
         pgQualifications: submission?.pgQualifications || "N/A",
         collegeName:   c.collegeName  || "N/A",
         address:       c.address      || "N/A",
-        centerPreference: submission?.centerPreference || "N/A",
-        specializations,
+        centerPreference: centerPrefsString,
+        specializations: finalSpecializations,
+        specialitiesStringFormatted: specWithCentersString,
         status:        c.status,
         unitName:      unit?.name     || "N/A",
         paymentAmount: (() => {
@@ -453,7 +577,7 @@ router.get("/candidates/export", requireAuth, requireRole("super_admin", "progra
     };
 
     const mapToExcelRow = (rc: typeof resolvedCandidates[0]) => {
-      const specsString = rc.specializations.join(", ");
+      const specsString = rc.specialitiesStringFormatted;
       const hasRetina   = rc.specializations.some(s => s.toLowerCase().includes("retina"));
       const hasBoth     = hasRetina && rc.specializations.some(s => !s.toLowerCase().includes("retina"));
       const segment     = hasBoth ? "Anterior, Retina" : hasRetina ? "Retina" : "Anterior";

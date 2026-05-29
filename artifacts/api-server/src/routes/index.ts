@@ -174,7 +174,7 @@ router.get(
       renderApplicationRecordRow('Application ID', id);
       renderApplicationRecordRow('Program', program?.name || 'Fellowship Program');
       renderApplicationRecordRow('Submission Date', sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
-      renderApplicationRecordRow('Status', sub.status.toUpperCase());
+      // renderApplicationRecordRow('Status', sub.status.toUpperCase());
       
       // Ensure vertical cursor is below the photo height before starting section headers to prevent overlapping
       if (doc.y < 250) {

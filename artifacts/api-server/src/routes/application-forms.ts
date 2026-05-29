@@ -485,18 +485,115 @@ router.get(
       const specParsed = parseSpecializationString(s.specialization);
       const specString = specParsed.join(", ");
 
-      let cpParsed: Record<string, any> = {};
-      try {
-        cpParsed = JSON.parse(s.centerPreference ?? "{}");
-      } catch {
-        if (s.centerPreference) {
-          const mainSpec = Array.isArray(specParsed) ? specParsed[0] : specParsed;
-          if (mainSpec) cpParsed[mainSpec] = s.centerPreference;
-          else cpParsed["Center"] = s.centerPreference;
-        }
-      }
+      const getFormattedSpecialityPrefs = (
+        specializationStr: string | null | undefined,
+        centerPreferenceStr: string | null | undefined,
+        formData: any,
+        customAnswers: any,
+        sectionsConfig?: any[]
+      ): { spec: string; location: string | null }[] => {
+        const specs = parseSpecializationString(specializationStr);
+        if (specs.length === 0) return [];
 
-      const caParsed = (s.customAnswers as Record<string, any>) || {};
+        const prefs: Record<string, string> = {};
+
+        if (centerPreferenceStr) {
+          try {
+            const parsed = JSON.parse(centerPreferenceStr);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              Object.entries(parsed).forEach(([k, v]) => {
+                prefs[k] = Array.isArray(v) ? v.join(", ") : String(v);
+              });
+            }
+          } catch { /* not JSON */ }
+        }
+
+        const extractUnitFields = (obj: any) => {
+          if (obj && typeof obj === "object") {
+            Object.entries(obj).forEach(([key, val]) => {
+              if (key.startsWith("unit_") && val) {
+                let label = key.replace("unit_", "").replace(/_/g, " ").toUpperCase();
+                if (sectionsConfig) {
+                  sectionsConfig.forEach((sec: any) => {
+                    sec.fields?.forEach((f: any) => {
+                      if (f.id === key && f.label) {
+                        label = f.label.replace(" Preferred Center", "");
+                      }
+                    });
+                  });
+                }
+                prefs[label] = Array.isArray(val) ? val.join(", ") : String(val);
+              }
+            });
+          }
+        };
+
+        extractUnitFields(formData);
+        extractUnitFields(customAnswers);
+        if (formData && formData.formData) {
+          extractUnitFields(formData.formData);
+        }
+
+        const normalize = (str: string): string => {
+          return str.toLowerCase().replace(/[^a-z0-9]/g, "");
+        };
+
+        const normalizedPrefs: Record<string, string> = {};
+        Object.entries(prefs).forEach(([k, v]) => {
+          normalizedPrefs[normalize(k)] = v;
+          if (k.startsWith("unit_")) {
+            normalizedPrefs[normalize(k.substring(5))] = v;
+          }
+        });
+
+        const result: { spec: string; location: string | null }[] = [];
+        specs.forEach(spec => {
+          const normSpec = normalize(spec);
+          let loc = normalizedPrefs[normSpec];
+
+          if (!loc) {
+            const key = Object.keys(normalizedPrefs).find(k => k.includes(normSpec) || normSpec.includes(k));
+            if (key) {
+              loc = normalizedPrefs[key];
+            }
+          }
+
+          if (!loc && centerPreferenceStr) {
+            const trimmedCp = centerPreferenceStr.trim();
+            if (!trimmedCp.startsWith("{") && !trimmedCp.startsWith("[") && trimmedCp !== "0" && trimmedCp.toLowerCase() !== "not applicable") {
+              loc = trimmedCp;
+            }
+          }
+
+          if (loc && (loc.toLowerCase().trim() === "not applicable" || loc.toLowerCase().trim() === "not_applicable")) {
+            loc = "";
+          }
+
+          result.push({
+            spec,
+            location: loc ? loc.trim() : null
+          });
+        });
+
+        return result;
+      };
+
+      const caParsed = {
+        ...((s.formData as Record<string, any>) || {}),
+        ...((s.customAnswers as Record<string, any>) || {})
+      };
+
+      const specPrefs = getFormattedSpecialityPrefs(s.specialization, s.centerPreference, caParsed, s.customAnswers, form?.sectionsConfig ?? undefined);
+
+      const specWithCentersList = specPrefs.map(({ spec, location }) => location ? `${spec}: ${location}` : spec);
+      const specWithCentersString = specWithCentersList.length > 0 ? specWithCentersList.join("; ") : specString;
+
+      const cpParsed: Record<string, string> = {};
+      specPrefs.forEach(({ spec, location }) => {
+        if (location) {
+          cpParsed[spec] = location;
+        }
+      });
 
       const segments = specParsed.map(spec => {
         const sName = spec.trim().toLowerCase();
@@ -510,7 +607,7 @@ router.get(
       const baseRow: Record<string, any> = {
         "Submission ID": s.id,
         "Date": formatToDDMMYYYY(s.submittedAt),
-        "Specialities": specString,
+        "Specialities": specWithCentersString,
         "Retina/Anterior": segmentString || "Anterior",
         "Timestamp": formatToLocalDateTime(s.submittedAt),
         "Name in Full (First Name, Middle Name, Last/Family Name)": s.fullName,
@@ -519,7 +616,7 @@ router.get(
         "Date of Birth": formatDOBToStandard(s.dateOfBirth),
         "Marital Status": s.maritalStatus ?? "",
         "Permanent Address (including postal pin code)": s.permanentAddress ?? "",
-        "Select 1 option from the dropbox": specString,
+        "Select 1 option from the dropbox": specWithCentersString,
         "Cornea - Choose the preferred center": cpParsed["Cornea"] ? (Array.isArray(cpParsed["Cornea"]) ? cpParsed["Cornea"].join(", ") : cpParsed["Cornea"]) : "Not Applicable",
         "Glaucoma - Choose the preferred center": cpParsed["Glaucoma"] ? (Array.isArray(cpParsed["Glaucoma"]) ? cpParsed["Glaucoma"].join(", ") : cpParsed["Glaucoma"]) : "Not Applicable",
         "IOL - Choose the preferred center": cpParsed["IOL"] ? (Array.isArray(cpParsed["IOL"]) ? cpParsed["IOL"].join(", ") : cpParsed["IOL"]) : "Not Applicable",

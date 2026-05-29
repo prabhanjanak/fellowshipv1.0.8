@@ -113,18 +113,32 @@ export default function QueueDisplayPage() {
 
   // Segment Split Logic
   const getPanelSegment = (panel: any) => {
-    if (!panel.specialityId) return "Anterior"; // Default fallback
+    if (panel.isMindMatter) return "Mind Matter";
+    
     const spec = specialities.find(s => s.id === panel.specialityId);
-    const nameLower = spec?.name.toLowerCase() || "";
-    const codeLower = spec?.code.toLowerCase() || "";
-    if (nameLower.includes("retina") || nameLower.includes("vitreo") || codeLower.includes("vr") || codeLower.includes("mr")) {
-      return "Retina";
+    const specNameLower = spec?.name.toLowerCase() || "";
+    const panelNameLower = panel.panelName?.toLowerCase() || "";
+    
+    const isMindMatter = 
+      panelNameLower.includes("mind") || 
+      panelNameLower.includes("matter") || 
+      panelNameLower.includes("psych") || 
+      panelNameLower.includes("hr") || 
+      panelNameLower.includes("behavior") ||
+      specNameLower.includes("mind") || 
+      specNameLower.includes("matter") || 
+      specNameLower.includes("psych") || 
+      specNameLower.includes("hr") || 
+      specNameLower.includes("behavior");
+
+    if (isMindMatter) {
+      return "Mind Matter";
     }
-    return "Anterior";
+    return "Medical";
   };
 
-  const retinaPanels = panels.filter(p => getPanelSegment(p) === "Retina");
-  const anteriorPanels = panels.filter(p => getPanelSegment(p) === "Anterior");
+  const medicalPanels = panels.filter(p => getPanelSegment(p) === "Medical");
+  const mindMatterPanels = panels.filter(p => getPanelSegment(p) === "Mind Matter");
 
   return (
     <div className="h-screen bg-slate-950 text-slate-100 font-sans flex flex-col overflow-hidden select-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black">
@@ -165,15 +179,15 @@ export default function QueueDisplayPage() {
       {/* 2. SPLIT SEGMENT COLUMNS */}
       <main className="flex-1 flex p-6 gap-6 overflow-hidden">
         
-        {/* ================= RETINA SEGMENT ================= */}
+        {/* ================= MEDICAL INTERVIEW ================= */}
         <section className="flex-1 flex flex-col rounded-3xl bg-indigo-950/20 border border-indigo-900/30 backdrop-blur-xl p-4 overflow-hidden shadow-2xl relative">
           <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/5 to-transparent pointer-events-none rounded-3xl" />
           
           {/* Header */}
           <div className="flex items-center justify-between bg-gradient-to-r from-indigo-900 to-indigo-850 border border-indigo-700/50 px-6 py-4 rounded-2xl shadow-lg shrink-0 mb-4">
-            <h2 className="text-2xl font-black uppercase tracking-wider text-indigo-200">Retina Segment Services</h2>
+            <h2 className="text-2xl font-black uppercase tracking-wider text-indigo-200">Medical Interview</h2>
             <Badge variant="outline" className="border-indigo-500/40 text-indigo-300 bg-indigo-950/40 text-xs font-black uppercase px-3 py-1">
-              {retinaPanels.length} Panels Active
+              {medicalPanels.length} Panels Active
             </Badge>
           </div>
 
@@ -187,13 +201,13 @@ export default function QueueDisplayPage() {
 
           {/* Cards Queue */}
           <div className="flex-1 overflow-y-auto flex flex-col gap-3 scrollbar-none">
-            {retinaPanels.length === 0 ? (
+            {medicalPanels.length === 0 ? (
               <div className="flex-1 flex items-center justify-center flex-col opacity-25">
                  <Activity size={60} strokeWidth={1.5} className="text-indigo-400 mb-4 animate-pulse" />
                  <p className="text-lg font-black text-indigo-300 uppercase tracking-widest">No Active Panels</p>
               </div>
             ) : (
-              retinaPanels.map((panel: any) => {
+              medicalPanels.map((panel: any) => {
                 const current = panel.current;
                 const queue = panel.nextQueue || [];
                 return (
@@ -215,7 +229,7 @@ export default function QueueDisplayPage() {
                     <div className="w-[18%] flex justify-end">
                       {current ? (
                         <span className="bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 px-3 py-1.5 rounded-lg text-xs font-black uppercase flex items-center gap-1.5 shadow-sm">
-                          <span className="h-1.5 w-1.5 bg-indigo-400 rounded-full animate-ping"></span>
+                           <span className="h-1.5 w-1.5 bg-indigo-400 rounded-full animate-ping"></span>
                           Live
                         </span>
                       ) : (
@@ -231,15 +245,15 @@ export default function QueueDisplayPage() {
           </div>
         </section>
 
-        {/* ================= ANTERIOR SEGMENT ================= */}
+        {/* ================= MIND MATTER INTERVIEW ================= */}
         <section className="flex-1 flex flex-col rounded-3xl bg-emerald-950/20 border border-emerald-900/30 backdrop-blur-xl p-4 overflow-hidden shadow-2xl relative">
           <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/5 to-transparent pointer-events-none rounded-3xl" />
           
           {/* Header */}
           <div className="flex items-center justify-between bg-gradient-to-r from-emerald-900 to-emerald-850 border border-emerald-700/50 px-6 py-4 rounded-2xl shadow-lg shrink-0 mb-4">
-            <h2 className="text-2xl font-black uppercase tracking-wider text-emerald-200">Anterior Segment Services</h2>
+            <h2 className="text-2xl font-black uppercase tracking-wider text-emerald-200">Mind Matter Interview</h2>
             <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-950/40 text-xs font-black uppercase px-3 py-1">
-              {anteriorPanels.length} Panels Active
+              {mindMatterPanels.length} Panels Active
             </Badge>
           </div>
 
@@ -253,13 +267,13 @@ export default function QueueDisplayPage() {
 
           {/* Cards Queue */}
           <div className="flex-1 overflow-y-auto flex flex-col gap-3 scrollbar-none">
-            {anteriorPanels.length === 0 ? (
+            {mindMatterPanels.length === 0 ? (
               <div className="flex-1 flex items-center justify-center flex-col opacity-25">
                  <Activity size={60} strokeWidth={1.5} className="text-emerald-400 mb-4 animate-pulse" />
                  <p className="text-lg font-black text-emerald-300 uppercase tracking-widest">No Active Panels</p>
               </div>
             ) : (
-              anteriorPanels.map((panel: any) => {
+              mindMatterPanels.map((panel: any) => {
                 const current = panel.current;
                 const queue = panel.nextQueue || [];
                 return (

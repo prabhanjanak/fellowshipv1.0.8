@@ -23,7 +23,16 @@ interface DoctorRow {
   assignments: { id: number; candidateId: number; candidateName: string; candidateCode: string; scheduledAt: string | null; status: string; score: number | null; }[];
 }
 
-interface Candidate { id: number; candidateCode: string; fullName: string; status: string; }
+interface Candidate {
+  id: number;
+  candidateCode: string;
+  fullName: string;
+  status: string;
+  mcqScore?: number | null;
+  psychometricScore?: number | null;
+  applications?: any[];
+  specializations?: string[];
+}
 
 interface ScoreEntry {
   id: number; candidateId: number; candidateName: string; candidateCode: string;
@@ -37,6 +46,7 @@ interface DoctorAssignment {
   batchId?: number;
   specialityId?: number | null;
   specialityName?: string;
+  submissionId?: number | null;
 }
 
 interface PanelEntry {
@@ -147,12 +157,23 @@ function DoctorView({ toast, qc }: { toast: ReturnType<typeof import("../hooks/u
         </CardContent>
       </Card>
 
-      <div>
-        <h1 className="text-2xl font-bold">My Interview Assignments</h1>
-        {myStatus?.specialityName && (
-          <p className="text-sm font-semibold text-primary mt-1">Specialization Panel: {myStatus.specialityName}</p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold font-mono">My Interview Assignments</h1>
+          {myStatus?.specialityName && (
+            <p className="text-sm font-semibold text-primary mt-1">Specialization Panel: {myStatus.specialityName}</p>
+          )}
+          <p className="text-muted-foreground text-sm mt-1">{assignments.length} candidates assigned</p>
+        </div>
+        {assignments.length > 0 && (
+          <Button 
+            variant="outline"
+            onClick={() => window.open(`/api/interviews/my-scores/export?token=${localStorage.getItem("fellowship_token")}`, "_blank")} 
+            className="gap-2 border-indigo-200 text-indigo-750 hover:bg-indigo-50 font-bold h-10 px-4 rounded-xl text-xs uppercase tracking-wider shadow-sm"
+          >
+            <FileText className="h-4 w-4 text-indigo-500" /> Download My Evaluations
+          </Button>
         )}
-        <p className="text-muted-foreground text-sm mt-1">{assignments.length} candidates assigned</p>
       </div>
 
       {assignments.length === 0 ? (
@@ -238,11 +259,17 @@ function DoctorView({ toast, qc }: { toast: ReturnType<typeof import("../hooks/u
                   </Badge>
                 </div>
                 <div className="flex-1 border border-slate-200/80 rounded-2xl overflow-hidden bg-white shadow-sm relative">
-                  <iframe 
-                    src={`/api/print-application/${scoreOpen.candidateId}?token=${localStorage.getItem("fellowship_token")}`} 
-                    className="w-full h-full border-none" 
-                    title="Comprehensive Application Print View"
-                  />
+                  {scoreOpen.submissionId ? (
+                    <iframe 
+                      src={`/api/print-application/${scoreOpen.submissionId}?token=${localStorage.getItem("fellowship_token")}`} 
+                      className="w-full h-full border-none" 
+                      title="Comprehensive Application Print View"
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-muted-foreground text-sm font-semibold">
+                      No print submission available
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -252,19 +279,24 @@ function DoctorView({ toast, qc }: { toast: ReturnType<typeof import("../hooks/u
                   <div>
                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Evaluation Matrix</h4>
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                      Total scoring range: 0 – {scoreOpen.batchId ? "Defined by Batch" : "100 Marks"}
+                      Total scoring range: 0 – 50 Marks (Clinical VIVA)
                     </p>
                   </div>
 
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Assigned Clinical Mark</Label>
+                      <Label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Assigned Clinical Mark (max 50)</Label>
                       <Input 
                         type="number" 
                         min={0} 
-                        max={100}
+                        max={50}
                         value={score} 
-                        onChange={(e) => setScore(e.target.value)} 
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          if (val > 50) setScore("50");
+                          else if (val < 0) setScore("0");
+                          else setScore(e.target.value);
+                        }} 
                         placeholder="Enter score..." 
                         className="h-12 border-2 rounded-xl focus:ring-indigo-500 font-bold font-mono text-sm"
                       />
@@ -314,7 +346,7 @@ function DoctorView({ toast, qc }: { toast: ReturnType<typeof import("../hooks/u
 
 /* ─── Admin / CEC View ─── */
 function AdminView({ toast, qc, isCEC }: { toast: ReturnType<typeof import("../hooks/use-toast").useToast>["toast"]; qc: ReturnType<typeof useQueryClient>; isCEC: boolean }) {
-  const [activeTab, setActiveTab] = useState<"panels" | "live" | "panel" | "scores">("panels");
+  const [activeTab, setActiveTab] = useState<"panels" | "live" | "scores" | "marksheet">("panels");
   const [assignDoctorId, setAssignDoctorId] = useState<number | null>(null);
   const [assignCandidateId, setAssignCandidateId] = useState("");
   const [assignScheduled, setAssignScheduled] = useState("");
@@ -324,6 +356,11 @@ function AdminView({ toast, qc, isCEC }: { toast: ReturnType<typeof import("../h
     queryKey: ["panel-live"],
     queryFn: () => api.get<PanelEntry[]>("/panel/live"),
     refetchInterval: activeTab === "live" ? 4000 : false,
+  });
+
+  const { data: specialities = [] } = useQuery<{ id: number; name: string; code: string }[]>({
+    queryKey: ["specialities"],
+    queryFn: () => api.get("/specialities"),
   });
 
   const { data: doctors = [], isLoading: doctorsLoading } = useQuery<DoctorRow[]>({
@@ -369,8 +406,8 @@ function AdminView({ toast, qc, isCEC }: { toast: ReturnType<typeof import("../h
   const tabs = [
     { key: "panels" as const, label: "Interview Panels", icon: LayoutGrid },
     { key: "live" as const, label: "Live Status", icon: Activity },
-    { key: "panel" as const, label: "Assignments", icon: Stethoscope },
     { key: "scores" as const, label: `Scores (${scores.length})`, icon: Star },
+    { key: "marksheet" as const, label: "Mark Sheet", icon: FileText },
   ];
 
   return (
@@ -405,7 +442,7 @@ function AdminView({ toast, qc, isCEC }: { toast: ReturnType<typeof import("../h
 
       {/* ── INTERVIEW PANELS ── */}
       {activeTab === "panels" && (
-        <PanelsTab toast={toast} qc={qc} candidates={candidates} />
+        <PanelsTab toast={toast} qc={qc} candidates={candidates} specialities={specialities} />
       )}
 
       {/* ── LIVE STATUS ── */}
@@ -460,71 +497,9 @@ function AdminView({ toast, qc, isCEC }: { toast: ReturnType<typeof import("../h
         </div>
       )}
 
-      {/* ── DOCTOR ASSIGNMENTS ── */}
-      {activeTab === "panel" && (
-        <>
-          {doctorsLoading ? (
-            <div className="text-center py-12 text-muted-foreground">Loading…</div>
-          ) : doctors.length === 0 ? (
-            <div className="text-center py-16"><Stethoscope className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" /><p className="text-muted-foreground">No doctors found. Add doctors in the Users page.</p></div>
-          ) : (
-            <div className="space-y-4">
-              {doctors.map((d) => (
-                <Card key={d.doctorId}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-base">{d.doctorName}</CardTitle>
-                        <p className="text-xs text-muted-foreground mt-0.5">{d.doctorEmail}</p>
-                        {d.unitName && <p className="text-xs text-primary mt-0.5">Unit: {d.unitName}</p>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary" className="text-xs">
-                          {d.assignments.length} assigned · {d.assignments.filter((a) => a.status === "completed").length} done
-                        </Badge>
-                        <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => setAssignDoctorId(d.doctorId)}>
-                          <UserPlus className="h-3.5 w-3.5" /> Assign
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  {d.assignments.length > 0 && (
-                    <CardContent className="pt-0">
-                      <div className="rounded-lg border overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead className="bg-muted/40 border-b">
-                            <tr>
-                              <th className="text-left px-3 py-2 font-medium text-muted-foreground text-xs">Candidate</th>
-                              <th className="text-left px-3 py-2 font-medium text-muted-foreground text-xs">Code</th>
-                              <th className="text-left px-3 py-2 font-medium text-muted-foreground text-xs">Scheduled</th>
-                              <th className="text-left px-3 py-2 font-medium text-muted-foreground text-xs">Status</th>
-                              <th className="text-right px-3 py-2 font-medium text-muted-foreground text-xs">Score</th>
-                              <th className="text-right px-3 py-2"></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {d.assignments.map((a) => (
-                              <tr key={a.id} className="border-t hover:bg-muted/20">
-                                <td className="px-3 py-2 font-medium text-sm">{a.candidateName}</td>
-                                <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{a.candidateCode}</td>
-                                <td className="px-3 py-2 text-xs text-muted-foreground">{a.scheduledAt ? fmtDate(a.scheduledAt) : "—"}</td>
-                                <td className="px-3 py-2"><Badge variant={a.status === "completed" ? "default" : "secondary"} className="text-[10px]">{a.status}</Badge></td>
-                                <td className="px-3 py-2 text-right font-semibold text-sm">{a.score != null ? a.score : "—"}</td>
-                                <td className="px-3 py-2 text-right">
-                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => removeMutation.mutate(a.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </CardContent>
-                  )}
-                </Card>
-              ))}
-            </div>
-          )}
-        </>
+      {/* ── MARK SHEET TAB ── */}
+      {activeTab === "marksheet" && (
+        <MarkSheetTab specialities={specialities} candidates={candidates} scores={scores} isCEC={isCEC} toast={toast} />
       )}
 
       {/* ── SCORES ── */}
@@ -648,15 +623,17 @@ function AdminView({ toast, qc, isCEC }: { toast: ReturnType<typeof import("../h
 }
 
 /* ─── Panels Tab ─── */
-function PanelsTab({ toast, qc, candidates }: {
+function PanelsTab({ toast, qc, candidates, specialities }: {
   toast: ReturnType<typeof import("../hooks/use-toast").useToast>["toast"];
   qc: ReturnType<typeof useQueryClient>;
   candidates: Candidate[];
+  specialities: { id: number; name: string; code: string }[];
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createRoom, setCreateRoom] = useState("");
   const [createSpecialityId, setCreateSpecialityId] = useState<string>("none");
+  const [createIsMindMatter, setCreateIsMindMatter] = useState(false);
 
   const [selectedPanelId, setSelectedPanelId] = useState<number | null>(null);
   const [addMemberDoctorId, setAddMemberDoctorId] = useState("");
@@ -667,6 +644,7 @@ function PanelsTab({ toast, qc, candidates }: {
   const [editName, setEditName] = useState("");
   const [editRoom, setEditRoom] = useState("");
   const [editSpecialityId, setEditSpecialityId] = useState<string>("none");
+  const [editIsMindMatter, setEditIsMindMatter] = useState(false);
 
   const { data: panels = [], isLoading } = useQuery<Panel[]>({
     queryKey: ["panels"],
@@ -674,10 +652,6 @@ function PanelsTab({ toast, qc, candidates }: {
     refetchInterval: 8000,
   });
 
-  const { data: specialities = [] } = useQuery<{ id: number; name: string; code: string }[]>({
-    queryKey: ["specialities"],
-    queryFn: () => api.get("/specialities"),
-  });
 
   const { data: doctorUsers = [] } = useQuery<DoctorUser[]>({
     queryKey: ["users"],
@@ -693,11 +667,11 @@ function PanelsTab({ toast, qc, candidates }: {
   });
 
   const createMutation = useMutation({
-    mutationFn: (body: { name: string; roomNumber: string; specialityId?: number | null }) => api.post<Panel>("/panels", body),
+    mutationFn: (body: { name: string; roomNumber: string; specialityId?: number | null; isMindMatter?: boolean }) => api.post<Panel>("/panels", body),
     onSuccess: () => {
       toast({ title: "Panel created" });
       qc.invalidateQueries({ queryKey: ["panels"] });
-      setCreateOpen(false); setCreateName(""); setCreateRoom(""); setCreateSpecialityId("none");
+      setCreateOpen(false); setCreateName(""); setCreateRoom(""); setCreateSpecialityId("none"); setCreateIsMindMatter(false);
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -713,7 +687,7 @@ function PanelsTab({ toast, qc, candidates }: {
   });
 
   const updatePanelMutation = useMutation({
-    mutationFn: ({ id, ...body }: { id: number; name?: string; roomNumber?: string; isActive?: boolean; specialityId?: number | null }) =>
+    mutationFn: ({ id, ...body }: { id: number; name?: string; roomNumber?: string; isActive?: boolean; specialityId?: number | null; isMindMatter?: boolean }) =>
       api.patch(`/panels/${id}`, body),
     onSuccess: () => {
       toast({ title: "Panel updated" });
@@ -728,6 +702,7 @@ function PanelsTab({ toast, qc, candidates }: {
       setEditName(managePanel.name);
       setEditRoom(managePanel.roomNumber);
       setEditSpecialityId(managePanel.specialityId ? String(managePanel.specialityId) : "none");
+      setEditIsMindMatter((managePanel as any).isMindMatter ?? false);
     }
   }, [managePanel]);
 
@@ -1002,6 +977,13 @@ function PanelsTab({ toast, qc, candidates }: {
                         <SelectContent>
                           {filteredCandidates
                             .filter((c) => !panelQueue.find((q) => q.candidateId === c.id && q.status !== "done"))
+                            .filter((c) => {
+                              if (!selectedPanel?.specialityId) return true; // General panel accepts any candidate
+                              const hasApp = (c as any).applications?.some((app: any) => app.specialityId === selectedPanel.specialityId);
+                              const specName = specialities.find(s => s.id === selectedPanel.specialityId)?.name;
+                              const hasPref = specName ? (c as any).specializations?.some((s: string) => s.toLowerCase() === specName.toLowerCase()) : false;
+                              return hasApp || hasPref;
+                            })
                             .map((c) => (
                               <SelectItem key={c.id} value={String(c.id)} className="text-xs">{c.fullName} · {c.candidateCode}</SelectItem>
                             ))}
@@ -1041,7 +1023,7 @@ function PanelsTab({ toast, qc, candidates }: {
       )}
 
       {/* Create Panel Dialog */}
-      <Dialog open={createOpen} onOpenChange={(o) => { if (!o) { setCreateOpen(false); setCreateName(""); setCreateRoom(""); setCreateSpecialityId("none"); } }}>
+      <Dialog open={createOpen} onOpenChange={(o) => { if (!o) { setCreateOpen(false); setCreateName(""); setCreateRoom(""); setCreateSpecialityId("none"); setCreateIsMindMatter(false); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Create Interview Panel</DialogTitle></DialogHeader>
           <div className="space-y-3">
@@ -1067,6 +1049,16 @@ function PanelsTab({ toast, qc, candidates }: {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-2 pt-1">
+              <input 
+                type="checkbox" 
+                id="createIsMindMatter"
+                checked={createIsMindMatter} 
+                onChange={(e) => setCreateIsMindMatter(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-350 text-orange-650 focus:ring-orange-500"
+              />
+              <Label htmlFor="createIsMindMatter" className="text-xs font-bold text-slate-750 cursor-pointer">Is Mind Matter Panel</Label>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -1074,7 +1066,8 @@ function PanelsTab({ toast, qc, candidates }: {
               onClick={() => createMutation.mutate({
                 name: createName.trim(),
                 roomNumber: createRoom.trim(),
-                specialityId: createSpecialityId === "none" ? null : Number(createSpecialityId)
+                specialityId: createSpecialityId === "none" ? null : Number(createSpecialityId),
+                isMindMatter: createIsMindMatter
               })}>
               {createMutation.isPending ? "Creating…" : "Create Panel"}
             </Button>
@@ -1109,6 +1102,16 @@ function PanelsTab({ toast, qc, candidates }: {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-2 pt-1">
+              <input 
+                type="checkbox" 
+                id="editIsMindMatter"
+                checked={editIsMindMatter} 
+                onChange={(e) => setEditIsMindMatter(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-350 text-orange-650 focus:ring-orange-500"
+              />
+              <Label htmlFor="editIsMindMatter" className="text-xs font-bold text-slate-755 cursor-pointer">Is Mind Matter Panel</Label>
+            </div>
             <div className="flex justify-between border-t pt-2 text-sm">
               <span className="text-muted-foreground">Members count:</span>
               <span className="font-semibold">{managePanel?.members.length} doctors</span>
@@ -1121,13 +1124,254 @@ function PanelsTab({ toast, qc, candidates }: {
                 id: managePanel.id,
                 name: editName.trim(),
                 roomNumber: editRoom.trim(),
-                specialityId: editSpecialityId === "none" ? null : Number(editSpecialityId)
+                specialityId: editSpecialityId === "none" ? null : Number(editSpecialityId),
+                isMindMatter: editIsMindMatter
               })}>
               {updatePanelMutation.isPending ? "Saving…" : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/* ─── Premium Mark Sheet Tab Component ─── */
+function MarkSheetTab({ specialities, candidates, scores, isCEC, toast }: {
+  specialities: { id: number; name: string; code: string }[];
+  candidates: any[];
+  scores: any[];
+  isCEC: boolean;
+  toast: any;
+}) {
+  const [selectedSpec, setSelectedSpec] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const getSpecsArray = (c: any): string[] => {
+    if (!c.specializations) return [];
+    if (Array.isArray(c.specializations)) return c.specializations;
+    if (typeof c.specializations === "string") {
+      const s = c.specializations;
+      if (s.startsWith("{") || s.startsWith("[")) {
+        try {
+          const parsed = JSON.parse(s.replace(/^{|}$/g, (m: string) => m === "{" ? "[" : "]"));
+          if (Array.isArray(parsed)) return parsed.map(String);
+        } catch {}
+      }
+      return s.split(",").map((x: string) => x.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
+  const filteredCandidates = candidates.filter(c => {
+    // 1. Search term match (Name or Code)
+    const matchesSearch = 
+      c.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.candidateCode.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!matchesSearch) return false;
+
+    // 2. Specialization match
+    if (selectedSpec === "all") return true;
+    const hasApp = c.applications?.some((app: any) => String(app.specialityId) === selectedSpec);
+    const specName = specialities.find(s => String(s.id) === selectedSpec)?.name;
+    const hasPref = specName ? getSpecsArray(c).some((s: string) => s.toLowerCase() === specName.toLowerCase()) : false;
+    return hasApp || hasPref;
+  });
+
+  const handleDownload = () => {
+    let url = `/api/interviews/scores/export?token=${localStorage.getItem("fellowship_token")}`;
+    if (selectedSpec !== "all") {
+      url += `&specialityId=${selectedSpec}`;
+    }
+    window.open(url, "_blank");
+  };
+
+  // Helper stats
+  const totalInView = filteredCandidates.length;
+  const gradedCandidates = filteredCandidates.filter(c => {
+    const candScores = scores.filter(s => s.candidateId === c.id);
+    return candScores.length > 0;
+  });
+  const fullyGradedCount = gradedCandidates.length;
+
+  return (
+    <div className="space-y-6">
+      {/* Marksheet Filter & Info Dashboard */}
+      <Card className="border-slate-200/80 shadow-sm rounded-2xl bg-white overflow-hidden">
+        <CardContent className="p-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="font-bold text-lg text-slate-800">Unified Mark Sheet</h3>
+              <p className="text-xs text-muted-foreground">
+                Consolidated entrance rankings combining written MCQ, clinical VIVA, and Mind Matter evaluations.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Speciality Selector */}
+              <div className="w-[220px]">
+                <Select value={selectedSpec} onValueChange={setSelectedSpec}>
+                  <SelectTrigger className="h-10 rounded-xl bg-slate-50 border-slate-200 focus:ring-orange-500 font-semibold text-slate-700">
+                    <SelectValue placeholder="All Specialities" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="all" className="font-semibold text-slate-750">All Specialities</SelectItem>
+                    {specialities.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)} className="text-xs font-semibold text-slate-750">
+                        {s.name} ({s.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Download Master Spreadsheet Button */}
+              <Button 
+                onClick={handleDownload}
+                className="gap-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold h-10 px-5 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all active:scale-95 duration-150"
+              >
+                <FileText className="h-4 w-4 text-orange-200" />
+                Export Excel Sheet
+              </Button>
+            </div>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-slate-100">
+            <div className="bg-slate-50/50 rounded-xl p-3.5 border border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black text-slate-450 uppercase tracking-widest leading-none mb-1">Active Group</p>
+                <p className="text-lg font-black text-slate-800">{totalInView} Candidates</p>
+              </div>
+              <Users className="h-5 w-5 text-slate-400" />
+            </div>
+
+            <div className="bg-slate-50/50 rounded-xl p-3.5 border border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black text-slate-450 uppercase tracking-widest leading-none mb-1">VIVA Evaluated</p>
+                <p className="text-lg font-black text-emerald-600">{fullyGradedCount} Candidates</p>
+              </div>
+              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+            </div>
+
+            <div className="bg-slate-50/50 rounded-xl p-3.5 border border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black text-slate-450 uppercase tracking-widest leading-none mb-1">Max Aggregate Ceiling</p>
+                <p className="text-lg font-black text-indigo-600">110 Total Marks</p>
+              </div>
+              <Star className="h-5 w-5 text-indigo-500" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Main List Table */}
+      <Card className="border-slate-200/80 shadow-sm rounded-2xl bg-white overflow-hidden">
+        <CardHeader className="pb-3 border-b border-slate-100 px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <CardTitle className="text-sm font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+            <LayoutGrid className="h-4.5 w-4.5 text-orange-500" /> Candidate Evaluation Grid
+          </CardTitle>
+          <div className="w-full sm:w-[240px] shrink-0">
+            <Input 
+              placeholder="Filter by name or code..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-8.5 text-xs rounded-lg border-slate-200 bg-slate-50/50 focus:bg-white transition-all font-semibold"
+            />
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {filteredCandidates.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground font-semibold">
+              <Users className="h-12 w-12 mx-auto text-muted-foreground/30 mb-3" />
+              No candidates found matching the active selection.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/40 text-slate-450 text-[10px] font-black uppercase tracking-widest">
+                    <th className="text-left px-6 py-3.5 font-black">Candidate</th>
+                    <th className="text-center px-4 py-3.5 font-black w-24">Code</th>
+                    <th className="text-right px-4 py-3.5 font-black w-28">MCQ (Max 50)</th>
+                    <th className="text-right px-4 py-3.5 font-black w-28">VIVA (Max 50)</th>
+                    <th className="text-right px-4 py-3.5 font-black w-28">Mind Matter (Max 10)</th>
+                    <th className="text-right px-6 py-3.5 font-black w-32">Total (Max 110)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700 font-semibold">
+                  {filteredCandidates.map((c) => {
+                    const candScores = scores.filter(s => s.candidateId === c.id);
+                    const avgViva = candScores.length > 0
+                      ? candScores.reduce((sum, s) => sum + s.score, 0) / candScores.length
+                      : null;
+
+                    const mcqScore = c.mcqScore ?? null;
+                    const mindMatterScore = c.psychometricScore ?? null;
+                    
+                    const totalScore = (mcqScore !== null || avgViva !== null || mindMatterScore !== null)
+                      ? (mcqScore ?? 0) + (avgViva ?? 0) + (mindMatterScore ?? 0)
+                      : null;
+
+                    return (
+                      <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="px-6 py-4">
+                          <div>
+                            <p className="font-bold text-slate-800 text-sm leading-tight">{c.fullName}</p>
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {getSpecsArray(c).map((spec: string, index: number) => (
+                                <Badge 
+                                  key={index} 
+                                  variant="outline" 
+                                  className="text-[9px] font-black uppercase px-2 py-0.5 tracking-wider bg-slate-50 border-slate-200/80 text-slate-500 rounded-md"
+                                >
+                                  {spec}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <span className="font-mono text-xs text-slate-500 uppercase font-black bg-slate-100 px-2 py-1 rounded-md border border-slate-200/30">
+                            {c.candidateCode}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-right tabular-nums text-sm font-mono text-slate-650">
+                          {mcqScore !== null ? mcqScore.toFixed(1) : "—"}
+                        </td>
+                        <td className="px-4 py-4 text-right">
+                          <div className="flex flex-col items-end">
+                            <span className="tabular-nums text-sm font-mono text-slate-650">
+                              {avgViva !== null ? avgViva.toFixed(1) : "—"}
+                            </span>
+                            {candScores.length > 0 && (
+                              <span className="text-[9px] text-muted-foreground font-black uppercase tracking-wider mt-0.5">
+                                {candScores.length} {candScores.length === 1 ? "doc" : "docs"}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-right tabular-nums text-sm font-mono text-slate-650">
+                          {mindMatterScore !== null ? mindMatterScore.toFixed(1) : "—"}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          {totalScore !== null ? (
+                            <Badge className="bg-slate-900 text-white font-mono font-bold text-sm tracking-wide shadow-sm hover:bg-slate-950 px-3 py-1 rounded-lg">
+                              {totalScore.toFixed(1)}
+                            </Badge>
+                          ) : (
+                            <span className="text-slate-400 font-mono">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

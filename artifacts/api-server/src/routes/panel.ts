@@ -6,11 +6,17 @@ import { logger } from "../lib/logger";
 
 const router: Router = Router();
 
+// Defensive migration to guarantee is_mind_matter exists on panels table
+db.execute(sql`ALTER TABLE interview_panels ADD COLUMN IF NOT EXISTS is_mind_matter BOOLEAN NOT NULL DEFAULT FALSE;`)
+  .catch(err => {
+    logger.error({ err }, "Defensive schema migration for is_mind_matter failed");
+  });
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 async function getPanels(isMockMode: boolean = false) {
   const panels = (await db.execute(sql`
-    SELECT ip.id, ip.name, ip.room_number, ip.program_id, ip.speciality_id, ip.is_active, ip.created_at
+    SELECT ip.id, ip.name, ip.room_number, ip.program_id, ip.speciality_id, ip.is_active, ip.is_mind_matter, ip.created_at
     FROM interview_panels ip
     WHERE ip.is_mock = ${isMockMode}
     ORDER BY ip.room_number
@@ -30,6 +36,7 @@ async function getPanels(isMockMode: boolean = false) {
     programId: p["program_id"],
     specialityId: p["speciality_id"],
     isActive: p["is_active"],
+    isMindMatter: p["is_mind_matter"],
     createdAt: p["created_at"],
     members: members
       .filter((m) => m["panel_id"] === p["id"])
@@ -67,15 +74,15 @@ router.post("/panels",
   requireAuth,
   requireRole("super_admin", "program_admin", "central_exam_coordinator"),
   async (req, res) => {
-    const { name, roomNumber, programId, specialityId, doctorIds, mainDoctorId } = req.body as {
+    const { name, roomNumber, programId, specialityId, doctorIds, mainDoctorId, isMindMatter } = req.body as {
       name: string; roomNumber: string; programId?: number; specialityId?: number;
-      doctorIds?: number[]; mainDoctorId?: number;
+      doctorIds?: number[]; mainDoctorId?: number; isMindMatter?: boolean;
     };
     if (!name || !roomNumber) return res.status(400).json({ error: "name and roomNumber required" });
 
     const [panel] = (await db.execute(sql`
-      INSERT INTO interview_panels (name, room_number, program_id, speciality_id)
-      VALUES (${name}, ${roomNumber}, ${programId ?? null}, ${specialityId ?? null})
+      INSERT INTO interview_panels (name, room_number, program_id, speciality_id, is_mind_matter)
+      VALUES (${name}, ${roomNumber}, ${programId ?? null}, ${specialityId ?? null}, ${isMindMatter ?? false})
       RETURNING *
     `)).rows as Array<Record<string, unknown>>;
 
@@ -97,11 +104,14 @@ router.patch("/panels/:id",
   requireRole("super_admin", "program_admin", "central_exam_coordinator"),
   async (req, res) => {
     const id = Number(req.params["id"]);
-    const { name, roomNumber, isActive, specialityId } = req.body as { name?: string; roomNumber?: string; isActive?: boolean; specialityId?: number | null };
+    const { name, roomNumber, isActive, specialityId, isMindMatter } = req.body as {
+      name?: string; roomNumber?: string; isActive?: boolean; specialityId?: number | null; isMindMatter?: boolean;
+    };
     const parts: string[] = [];
     if (name !== undefined) parts.push(`name = '${name.replace(/'/g, "''")}'`);
     if (roomNumber !== undefined) parts.push(`room_number = '${roomNumber.replace(/'/g, "''")}'`);
     if (isActive !== undefined) parts.push(`is_active = ${isActive}`);
+    if (isMindMatter !== undefined) parts.push(`is_mind_matter = ${isMindMatter}`);
     if (specialityId !== undefined) {
       parts.push(`speciality_id = ${specialityId === null ? "NULL" : specialityId}`);
     }
@@ -184,6 +194,29 @@ router.post("/panels/:id/queue",
     const panelId = Number(req.params["id"]);
     const { candidateId } = req.body as { candidateId: number };
 
+    // Validate if the candidate has applied for the panel's mapped specialization
+    const [panelRow] = (await db.execute(sql`
+      SELECT speciality_id FROM interview_panels WHERE id = ${panelId}
+    `)).rows as Array<Record<string, unknown>>;
+
+    if (panelRow && panelRow["speciality_id"]) {
+      const specId = Number(panelRow["speciality_id"]);
+      
+      const prefs = (await db.execute(sql`
+        SELECT id FROM candidate_preferences 
+        WHERE candidate_id = ${candidateId} AND speciality_id = ${specId}
+      `)).rows;
+
+      const apps = (await db.execute(sql`
+        SELECT id FROM applications 
+        WHERE candidate_id = ${candidateId} AND speciality_id = ${specId}
+      `)).rows;
+
+      if (prefs.length === 0 && apps.length === 0) {
+        return res.status(400).json({ error: "Candidate has not applied for this panel's specialization." });
+      }
+    }
+
     // Get max position
     const [maxRow] = (await db.execute(sql`
       SELECT COALESCE(MAX(queue_position), -1) as max_pos FROM panel_queue WHERE panel_id = ${panelId}
@@ -205,7 +238,7 @@ router.patch("/panels/:id/queue/:candidateId",
   async (req, res) => {
     const panelId = Number(req.params["id"]);
     const candidateId = Number(req.params["candidateId"]);
-    const { status } = req.body as { status: "waiting" | "in_progress" | "done" };
+    const { status } = req.body as { status: string };
 
     if (status === "in_progress") {
       // Mark any existing in_progress as done first
@@ -228,7 +261,7 @@ router.patch("/panels/:id/queue/:candidateId",
             SET is_engaged = TRUE, engaged_since = NOW(), current_candidate_id = ${candidateId}, updated_at = NOW()
         `);
       }
-    } else if (status === "done") {
+    } else if (status === "done" || status === "completed") {
       await db.execute(sql`
         UPDATE panel_queue SET status = 'done' WHERE panel_id = ${panelId} AND candidate_id = ${candidateId}
       `);
@@ -240,6 +273,30 @@ router.patch("/panels/:id/queue/:candidateId",
           UPDATE doctor_panel_status SET is_engaged = FALSE, current_candidate_id = NULL, updated_at = NOW()
           WHERE doctor_id = ${m["doctor_id"]}
         `);
+      }
+
+      // Automatically summon the next waiting candidate in queue
+      const [nextWaiting] = (await db.execute(sql`
+        SELECT candidate_id FROM panel_queue
+        WHERE panel_id = ${panelId} AND status = 'waiting'
+        ORDER BY queue_position ASC, created_at ASC
+        LIMIT 1
+      `)).rows as Array<Record<string, unknown>>;
+
+      if (nextWaiting) {
+        const nextId = Number(nextWaiting["candidate_id"]);
+        await db.execute(sql`
+          UPDATE panel_queue SET status = 'in_progress', called_at = NOW()
+          WHERE panel_id = ${panelId} AND candidate_id = ${nextId}
+        `);
+        for (const m of members) {
+          await db.execute(sql`
+            INSERT INTO doctor_panel_status (doctor_id, is_engaged, engaged_since, current_candidate_id, updated_at)
+            VALUES (${m["doctor_id"]}, TRUE, NOW(), ${nextId}, NOW())
+            ON CONFLICT (doctor_id) DO UPDATE
+              SET is_engaged = TRUE, engaged_since = NOW(), current_candidate_id = ${nextId}, updated_at = NOW()
+          `);
+        }
       }
     } else {
       await db.execute(sql`

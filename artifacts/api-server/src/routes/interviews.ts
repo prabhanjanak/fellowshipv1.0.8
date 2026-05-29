@@ -1,7 +1,20 @@
 import { Router } from "express";
-import { and, eq, sql } from "drizzle-orm";
-import { db, doctorAssignmentsTable, interviewScoresTable, candidatesTable, unitsTable, usersTable, applicationsTable } from "@workspace/db";
+import { and, eq, sql, desc } from "drizzle-orm";
+import { 
+  db, 
+  doctorAssignmentsTable, 
+  interviewScoresTable, 
+  candidatesTable, 
+  unitsTable, 
+  usersTable, 
+  applicationsTable,
+  applicationSubmissionsTable,
+  specialitiesTable,
+  batchCandidatesTable,
+  batchesTable
+} from "@workspace/db";
 import { requireAuth, requireRole } from "../middleware/auth";
+import * as XLSX from "xlsx";
 
 const router: Router = Router();
 
@@ -11,48 +24,59 @@ router.get("/interviews/assignments", requireAuth, requireRole("doctor"), async 
 
   // 1. Identify active panel and its speciality
   const panelQuery = await db.execute(sql`
-    SELECT ip.speciality_id, s.name as speciality_name, ip.name as panel_name
+    SELECT ip.id as panel_id, ip.speciality_id, s.name as speciality_name, ip.name as panel_name
     FROM interview_panel_members ipm
     JOIN interview_panels ip ON ip.id = ipm.panel_id
     LEFT JOIN specialities s ON s.id = ip.speciality_id
     WHERE ipm.doctor_id = ${userId} AND ip.is_active = TRUE
     LIMIT 1
   `);
-  const activePanel = panelQuery.rows[0] as { speciality_id: number | null; speciality_name: string | null; panel_name: string } | undefined;
+  const activePanel = panelQuery.rows[0] as { panel_id: number; speciality_id: number | null; speciality_name: string | null; panel_name: string } | undefined;
   if (!activePanel) {
     res.json([]);
     return;
   }
   const specialityId = activePanel.speciality_id;
+  const panelId = activePanel.panel_id;
 
-  const assigns = await db.select().from(doctorAssignmentsTable).where(
-    and(
-      eq(doctorAssignmentsTable.doctorId, userId),
-      specialityId ? eq(doctorAssignmentsTable.specialityId, specialityId) : sql`speciality_id IS NULL`
-    )
-  );
-  const candidates = await db.select().from(candidatesTable);
-  const units = await db.select().from(unitsTable);
+  // 2. Fetch candidates directly from the panel's queue
+  const queueEntries = (await db.execute(sql`
+    SELECT pq.id as queue_id, pq.candidate_id, pq.status as queue_status,
+           c.full_name, c.candidate_code, c.email, c.phone, c.qualification, c.college_name, c.status as candidate_status,
+           sub.id as submission_id, sub.pg_qualifications
+    FROM panel_queue pq
+    JOIN candidates c ON c.id = pq.candidate_id
+    LEFT JOIN application_submissions sub ON LOWER(sub.email) = LOWER(c.email)
+    WHERE pq.panel_id = ${panelId}
+    ORDER BY pq.queue_position ASC, pq.created_at ASC
+  `)).rows as Array<Record<string, unknown>>;
+
   const scores = await db.select().from(interviewScoresTable).where(
     and(
       eq(interviewScoresTable.doctorId, userId),
       specialityId ? eq(interviewScoresTable.specialityId, specialityId) : sql`speciality_id IS NULL`
     )
   );
-  res.json(assigns.map((a) => {
-    const c = candidates.find((x) => x.id === a.candidateId);
-    const unit = c?.unitId ? units.find((u) => u.id === c.unitId) : null;
-    const sc = scores.find((s) => s.candidateId === a.candidateId && (specialityId ? s.specialityId === specialityId : s.specialityId === null));
+
+  res.json(queueEntries.map((q) => {
+    const candidateId = Number(q["candidate_id"]);
+    const sc = scores.find((s) => s.candidateId === candidateId);
     return {
-      id: a.id,
-      candidateId: a.candidateId,
-      candidateName: c?.fullName ?? "",
-      candidateCode: c?.candidateCode ?? "",
+      id: Number(q["queue_id"]),
+      candidateId,
+      candidateName: String(q["full_name"] ?? ""),
+      candidateCode: String(q["candidate_code"] ?? ""),
       specialityId,
       specialityName: activePanel.speciality_name ?? activePanel.panel_name,
-      unitName: unit?.name ?? null,
-      scheduledAt: a.scheduledAt?.toISOString() ?? null,
-      status: sc ? "completed" : a.status,
+      email: String(q["email"] ?? "N/A"),
+      phone: String(q["phone"] ?? "N/A"),
+      qualification: String(q["qualification"] ?? "N/A"),
+      pgQualifications: String(q["pg_qualifications"] ?? "N/A"),
+      collegeName: String(q["college_name"] ?? "N/A"),
+      submissionId: q["submission_id"] ? Number(q["submission_id"]) : null,
+      unitName: null,
+      scheduledAt: null,
+      status: sc ? "completed" : (q["queue_status"] === "completed" ? "completed" : "pending"),
       existingScore: sc ? { id: sc.id, score: sc.score, remarks: sc.remarks, submittedAt: sc.submittedAt.toISOString() } : null,
     };
   }));
@@ -202,6 +226,12 @@ router.post("/interviews/scores", requireAuth, requireRole("doctor"), async (req
     return res.status(403).json({ error: "Access denied. Doctor is not currently active in any panel." });
   }
   const specialityId = activePanel.speciality_id;
+  const panelId = activePanel.panel_id;
+
+  // 2. Validate score ceiling of 50 marks
+  if (score < 0 || score > 50) {
+    return res.status(400).json({ error: "Clinical VIVA score must be between 0 and 50 marks." });
+  }
 
   const existing = await db.select().from(interviewScoresTable).where(
     and(
@@ -217,7 +247,7 @@ router.post("/interviews/scores", requireAuth, requireRole("doctor"), async (req
   } else {
     [row] = await db.insert(interviewScoresTable).values({ candidateId, doctorId: userId, specialityId, score, remarks: remarks ?? null }).returning();
   }
-  if (!row) { res.status(500).json({ error: "Failed" }); return; }
+  if (!row) { res.status(500).json({ error: "Failed to submit score" }); return; }
 
   // Update applicationsTable status for this specialization
   if (specialityId) {
@@ -247,19 +277,284 @@ router.post("/interviews/scores", requireAuth, requireRole("doctor"), async (req
       specialityId ? eq(doctorAssignmentsTable.specialityId, specialityId) : sql`speciality_id IS NULL`
     ));
 
-  // Mark in panel queue as done
-  await db.execute(sql`
-    UPDATE panel_queue SET status = 'completed'
-    WHERE panel_id = ${activePanel.panel_id} AND candidate_id = ${candidateId}
-  `);
-
-  // Release doctor status from being engaged with this candidate
+  // Release status for the grading doctor
   await db.execute(sql`
     UPDATE doctor_panel_status SET is_engaged = FALSE, current_candidate_id = NULL, updated_at = NOW()
     WHERE doctor_id = ${userId}
   `);
 
+  // 3. Shared Panel Logic: Check if ALL panel members have scored this candidate
+  const members = (await db.execute(sql`
+    SELECT doctor_id FROM interview_panel_members WHERE panel_id = ${panelId}
+  `)).rows as Array<{ doctor_id: number }>;
+
+  const scoresOnSpec = await db.select().from(interviewScoresTable).where(
+    and(
+      eq(interviewScoresTable.candidateId, candidateId),
+      specialityId ? eq(interviewScoresTable.specialityId, specialityId) : sql`speciality_id IS NULL`
+    )
+  );
+
+  const doctorsInPanel = new Set(members.map(m => m.doctor_id));
+  const panelScores = scoresOnSpec.filter(s => doctorsInPanel.has(s.doctorId));
+
+  // If everyone has graded, mark queue position done and auto-call next candidate
+  if (panelScores.length >= members.length) {
+    await db.execute(sql`
+      UPDATE panel_queue SET status = 'done'
+      WHERE panel_id = ${panelId} AND candidate_id = ${candidateId}
+    `);
+
+    // Release engagement status for ALL members on this panel
+    for (const m of members) {
+      await db.execute(sql`
+        UPDATE doctor_panel_status SET is_engaged = FALSE, current_candidate_id = NULL, updated_at = NOW()
+        WHERE doctor_id = ${m.doctor_id}
+      `);
+    }
+
+    // Automatically summon the next waiting candidate in queue
+    const [nextWaiting] = (await db.execute(sql`
+      SELECT candidate_id FROM panel_queue
+      WHERE panel_id = ${panelId} AND status = 'waiting'
+      ORDER BY queue_position ASC, created_at ASC
+      LIMIT 1
+    `)).rows as Array<Record<string, unknown>>;
+
+    if (nextWaiting) {
+      const nextId = Number(nextWaiting["candidate_id"]);
+      await db.execute(sql`
+        UPDATE panel_queue SET status = 'in_progress', called_at = NOW()
+        WHERE panel_id = ${panelId} AND candidate_id = ${nextId}
+      `);
+      for (const m of members) {
+        await db.execute(sql`
+          INSERT INTO doctor_panel_status (doctor_id, is_engaged, engaged_since, current_candidate_id, updated_at)
+          VALUES (${m.doctor_id}, TRUE, NOW(), ${nextId}, NOW())
+          ON CONFLICT (doctor_id) DO UPDATE
+            SET is_engaged = TRUE, engaged_since = NOW(), current_candidate_id = ${nextId}, updated_at = NOW()
+        `);
+      }
+    }
+  }
+
   res.json({ id: row.id, candidateId: row.candidateId, doctorId: row.doctorId, score: row.score, remarks: row.remarks, submittedAt: row.submittedAt.toISOString() });
+});
+
+// Helper style constants for Excel sheets
+const HEADER_FONT  = { bold: true, color: { rgb: "FFFFFF" }, sz: 11, name: "Calibri" };
+const HEADER_ALIGN = { horizontal: "center", vertical: "center", wrapText: false };
+const ROW_EVEN     = { patternType: "solid", fgColor: { rgb: "E8F0FE" } };
+const ROW_ODD      = { patternType: "solid", fgColor: { rgb: "FFFFFF" } };
+const BODY_FONT    = { sz: 10, name: "Calibri" };
+const BODY_ALIGN   = { horizontal: "left", vertical: "center", wrapText: false };
+const THIN_BORDER  = {
+  top:    { style: "thin", color: { rgb: "C5D3E8" } },
+  bottom: { style: "thin", color: { rgb: "C5D3E8" } },
+  left:   { style: "thin", color: { rgb: "C5D3E8" } },
+  right:  { style: "thin", color: { rgb: "C5D3E8" } },
+};
+
+function buildStyledSheet(rows: Record<string, any>[], headerColorHex: string = "0B4A8F"): XLSX.WorkSheet {
+  if (rows.length === 0) {
+    const ws = XLSX.utils.json_to_sheet([]);
+    return ws;
+  }
+
+  const headers = Object.keys(rows[0]);
+  const numCols = headers.length;
+  const numRows = rows.length;
+
+  const wsData: any[][] = [headers, ...rows.map(r => headers.map(h => r[h] ?? ""))];
+  const ws: XLSX.WorkSheet = XLSX.utils.aoa_to_sheet(wsData);
+
+  for (let R = 0; R <= numRows; R++) {
+    for (let C = 0; C < numCols; C++) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[addr]) continue;
+      const cell = ws[addr];
+
+      if (R === 0) {
+        cell.s = {
+          fill:      { patternType: "solid", fgColor: { rgb: headerColorHex } },
+          font:      HEADER_FONT,
+          alignment: HEADER_ALIGN,
+          border:    THIN_BORDER,
+        };
+      } else {
+        cell.s = {
+          fill:      R % 2 === 0 ? ROW_ODD : ROW_EVEN,
+          font:      BODY_FONT,
+          alignment: BODY_ALIGN,
+          border:    THIN_BORDER,
+        };
+      }
+    }
+  }
+
+  ws["!cols"] = headers.map((h) => {
+    let maxLen = h.length;
+    for (const row of rows) {
+      const v = row[h];
+      if (v != null) maxLen = Math.max(maxLen, String(v).length);
+    }
+    return { wch: Math.min(maxLen + 4, 50) };
+  });
+
+  ws["!freeze"] = { xSplit: 0, ySplit: 1, topLeftCell: "A2", activePane: "bottomLeft", state: "frozen" };
+  ws["!autofilter"] = {
+    ref: XLSX.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: numCols - 1, r: numRows } }),
+  };
+  ws["!rows"] = [{ hpt: 22 }, ...Array(numRows).fill({ hpt: 18 })];
+
+  return ws;
+}
+
+// Helper to parse specialization strings
+const parseSpecializationString = (spec: string | null | undefined): string[] => {
+  if (!spec) return [];
+  if (spec.startsWith("[") && spec.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(spec);
+      if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    } catch { }
+  }
+  return spec.split(",").map(s => s.trim()).filter(Boolean);
+};
+
+// Doctor: download my scoring Excel evaluations list
+router.get("/interviews/my-scores/export", requireAuth, requireRole("doctor"), async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    
+    const scores = await db.select().from(interviewScoresTable).where(eq(interviewScoresTable.doctorId, userId));
+    const candidates = await db.select().from(candidatesTable);
+    const submissions = await db.select().from(applicationSubmissionsTable);
+    const specs = await db.select().from(specialitiesTable);
+    
+    const rows = scores.map((s) => {
+      const c = candidates.find((x) => x.id === s.candidateId);
+      const sub = c ? submissions.find((sub) => sub.email.toLowerCase() === c.email.toLowerCase()) : null;
+      const spec = s.specialityId ? specs.find((sp) => sp.id === s.specialityId) : null;
+      
+      return {
+        "Candidate Code": c?.candidateCode ?? "N/A",
+        "Candidate Name": c?.fullName ?? "N/A",
+        "Email": c?.email ?? "N/A",
+        "Phone": c?.phone ?? "N/A",
+        "MBBS College": sub?.medicalCollege ?? "N/A",
+        "UG Qualification": c?.qualification ?? "N/A",
+        "PG Qualification": sub?.pgQualifications ?? "N/A",
+        "Specialization": spec?.name ?? "General",
+        "VIVA Score (max 50)": s.score,
+        "Remarks": s.remarks ?? "—",
+        "Evaluation Date": s.submittedAt ? s.submittedAt.toLocaleDateString("en-IN") : "N/A"
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = buildStyledSheet(rows, "2563EB");
+    XLSX.utils.book_append_sheet(wb, ws, "My Evaluations");
+    
+    const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx", cellStyles: true });
+    res.setHeader("Content-Disposition", `attachment; filename="Doctor_Evaluations_${new Date().toISOString().split("T")[0]}.xlsx"`);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.send(buffer);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to export evaluations" });
+  }
+});
+
+// Admin: download central coordinator master scores sheets
+router.get("/interviews/scores/export", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req, res) => {
+  try {
+    const specId = req.query["specialityId"] ? Number(req.query["specialityId"]) : undefined;
+    
+    const candidates = await db.select().from(candidatesTable).where(eq(candidatesTable.isMock, (req as any).isMockMode));
+    const allSpecs = await db.select().from(specialitiesTable);
+    const allSubmissions = await db.select().from(applicationSubmissionsTable);
+    const allBatchCand = await db.select().from(batchCandidatesTable);
+    const allScores = await db.select().from(interviewScoresTable);
+    const allDoctors = await db.select().from(usersTable).where(eq(usersTable.role, "doctor"));
+    
+    let filteredCandidates = candidates;
+    if (specId !== undefined) {
+      const { candidatePreferencesTable, applicationsTable } = await import("@workspace/db");
+      const prefs = await db.select().from(candidatePreferencesTable).where(eq(candidatePreferencesTable.specialityId, specId));
+      const apps = await db.select().from(applicationsTable).where(eq(applicationsTable.specialityId, specId));
+      const eligibleIds = new Set([
+        ...prefs.map(p => p.candidateId),
+        ...apps.map(a => a.candidateId)
+      ]);
+      filteredCandidates = candidates.filter(c => eligibleIds.has(c.id));
+    }
+    
+    const rows = filteredCandidates.map((c) => {
+      const sub = allSubmissions.find((s) => s.email.toLowerCase() === c.email.toLowerCase());
+      
+      const candidateBatchCands = allBatchCand.filter((bc) => bc.candidateId === c.id);
+      const specIds = candidateBatchCands.map(bc => bc.specialityId).filter(Boolean);
+      let specs = allSpecs.filter(sp => specIds.includes(sp.id)).map(sp => sp.name);
+      if (specs.length === 0 && sub?.specialization) {
+        specs = parseSpecializationString(sub.specialization);
+      }
+      const specializationStr = specs.length > 0 ? specs.join(", ") : "General";
+      
+      const bcRow = candidateBatchCands[0];
+      
+      const rawMcq = bcRow?.mcqScore ?? (c.mcqScore ? Number(c.mcqScore) : null);
+      const mcqScore = rawMcq != null ? Number(rawMcq) : null;
+      
+      const rawPsy = bcRow?.psychometricScore ?? (c.psychometricScore ? Number(c.psychometricScore) : null);
+      const psychometricScore = rawPsy != null ? Number(rawPsy) : null;
+
+      const candScores = allScores.filter(s => s.candidateId === c.id);
+      
+      const doctorCols: Record<string, string | number> = {};
+      allDoctors.forEach((doc) => {
+        const docScore = candScores.find(s => s.doctorId === doc.id);
+        doctorCols[`Score - Dr. ${doc.fullName}`] = docScore != null ? docScore.score : "—";
+      });
+
+      const docScores = candScores.map(s => s.score);
+      const avgVivaScore = docScores.length > 0 
+        ? docScores.reduce((acc, val) => acc + val, 0) / docScores.length
+        : null;
+
+      const totalScore = (mcqScore != null || avgVivaScore != null || psychometricScore != null)
+        ? (mcqScore ?? 0) + (avgVivaScore ?? 0) + (psychometricScore ?? 0)
+        : null;
+
+      return {
+        "Candidate ID": c.candidateCode,
+        "Student Name": c.fullName,
+        "Email": c.email,
+        "Phone": c.phone || "N/A",
+        "College": c.collegeName || sub?.medicalCollege || "N/A",
+        "Specialization": specializationStr,
+        "MCQ Score (max 50)": mcqScore != null ? mcqScore : "—",
+        "Mind Matter Score (max 10)": psychometricScore != null ? psychometricScore : "—",
+        ...doctorCols,
+        "Average VIVA Score (max 50)": avgVivaScore != null ? Number(avgVivaScore.toFixed(2)) : "—",
+        "Total Score (max 110)": totalScore != null ? Number(totalScore.toFixed(2)) : "—",
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    const sheetTitle = specId !== undefined 
+      ? (allSpecs.find(s => s.id === specId)?.name || "Specialized") 
+      : "Central Marksheet";
+    const ws = buildStyledSheet(rows, "0B4A8F");
+    XLSX.utils.book_append_sheet(wb, ws, sheetTitle.substring(0, 31));
+    
+    const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx", cellStyles: true });
+    const today = new Date().toISOString().split("T")[0];
+    res.setHeader("Content-Disposition", `attachment; filename="Central_Coordinator_Marksheet_${today}.xlsx"`);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.send(buffer);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to export marksheet" });
+  }
 });
 
 export default router;
