@@ -134,6 +134,67 @@ async function main() {
         mcq: 43.5,
         psych: 9.5,
         prefCenters: ["Retina: Coimbatore"]
+      },
+      // --- Unassigned Candidates for Manual Testing ---
+      {
+        name: "Karthik Ramasamy",
+        email: "karthik.r@mocktest.com",
+        code: "SAV-GL-106",
+        phone: "9876543215",
+        college: "Madras Medical College, Chennai",
+        qualification: "MS Ophthalmology",
+        pgQual: "MS Ophthalmology",
+        specId: glaucomaSpec.id,
+        specName: glaucomaSpec.name,
+        mcq: 45.0,
+        psych: 8.0,
+        prefCenters: ["Glaucoma: Coimbatore"],
+        isUnassigned: true
+      },
+      {
+        name: "Divya Nair",
+        email: "divya.n@mocktest.com",
+        code: "SAV-RT-107",
+        phone: "9876543216",
+        college: "Amrita School of Medicine, Kochi",
+        qualification: "DNB Ophthalmology",
+        pgQual: "DNB Ophthalmology",
+        specId: retinaSpec.id,
+        specName: retinaSpec.name,
+        mcq: 42.5,
+        psych: 7.0,
+        prefCenters: ["Retina: Bengaluru"],
+        isUnassigned: true
+      },
+      {
+        name: "Vijay Kumar",
+        email: "vijay.k@mocktest.com",
+        code: "SAV-GL-108",
+        phone: "9876543217",
+        college: " Stanley Medical College, Chennai",
+        qualification: "MS Ophthalmology",
+        pgQual: "MS Ophthalmology",
+        specId: glaucomaSpec.id,
+        specName: glaucomaSpec.name,
+        mcq: 41.5,
+        psych: 8.5,
+        prefCenters: ["Glaucoma: Chennai"],
+        isUnassigned: true
+      },
+      {
+        name: "Priya Sharma",
+        email: "priya.s@mocktest.com",
+        code: "SAV-RT-109",
+        phone: "9876543218",
+        college: "Christian Medical College, Vellore",
+        qualification: "MS Ophthalmology",
+        pgQual: "MS Ophthalmology",
+        specId: retinaSpec.id,
+        specName: retinaSpec.name,
+        mcq: 44.0,
+        psych: 9.0,
+        prefCenters: ["Retina: Coimbatore"],
+        isUnassigned: true
       }
     ];
 
@@ -181,6 +242,7 @@ async function main() {
       cand.specName = mc.specName;
       cand.mcq = mc.mcq;
       cand.psych = mc.psych;
+      cand.isUnassigned = !!mc.isUnassigned;
       candidatesDb.push(cand);
     }
     console.log(`Successfully created ${candidatesDb.length} test candidates!`);
@@ -241,9 +303,9 @@ async function main() {
     // 6. Insert Panel Queues & Mock Evaluations
     console.log("Queueing candidates and inserting mock grades...");
     
-    // Filter candidates by spec matching panel
-    const glaucomaCands = candidatesDb.filter(c => c.specId === glaucomaSpec.id);
-    const retinaCands = candidatesDb.filter(c => c.specId === retinaSpec.id);
+    // Filter candidates by spec matching panel (excluding unassigned ones for manual testing)
+    const glaucomaCands = candidatesDb.filter(c => c.specId === glaucomaSpec.id && !c.isUnassigned);
+    const retinaCands = candidatesDb.filter(c => c.specId === retinaSpec.id && !c.isUnassigned);
 
     // a. Glaucoma panel queue
     let queuePos = 1;
@@ -311,9 +373,9 @@ async function main() {
       queuePos++;
     }
 
-    // c. Mind Matter panel queue (receives ALL glaucoma and retina candidates)
+    // c. Mind Matter panel queue (receives ALL glaucoma and retina candidates, excluding unassigned ones)
     queuePos = 1;
-    for (const c of candidatesDb) {
+    for (const c of candidatesDb.filter(x => !x.isUnassigned)) {
       const status = queuePos === 1 ? 'in_progress' : 'waiting';
       await client.query(`
         INSERT INTO panel_queue (panel_id, candidate_id, queue_position, status, called_at, created_at)
