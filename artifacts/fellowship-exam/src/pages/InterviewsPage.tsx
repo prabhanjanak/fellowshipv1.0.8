@@ -1270,8 +1270,20 @@ function MarkSheetTab({ specialities, candidates, scores, isCEC, toast }: {
       qc.invalidateQueries({ queryKey: ["candidates"] });
       qc.invalidateQueries({ queryKey: ["interview-scores"] });
     },
-    onError: (e: Error) => {
-      toast({ title: "Failed to update score", description: e.message, variant: "destructive" });
+    onError: (e: any) => {
+      let desc = e.message;
+      if (e.response?.status === 403) {
+        desc = "Doctor marks cannot be changed. Please do it with that doctor's login account only, or ask an administrator. Only administrators have that access.";
+      } else if (e.response?.status === 401) {
+        desc = "Your session has expired. Please log in again.";
+      } else if (e.response?.data?.error) {
+        desc = e.response.data.error;
+      }
+      toast({ 
+        title: "Access Denied / Failed to Update", 
+        description: desc, 
+        variant: "destructive" 
+      });
     }
   });
 

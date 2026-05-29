@@ -799,78 +799,83 @@ router.post("/candidates", requireAuth, requireRole("super_admin", "program_admi
 
 // CEC or admin: update MCQ / psychometric / VIVA scores (+ optionally assign to panel queue)
 router.patch("/candidates/:candidateId/marks", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req, res) => {
-  const id = Number(req.params["candidateId"]);
-  const { mcqScore, psychometricScore, vivaScore, specialityId, panelId } = req.body as { 
-    mcqScore?: number | null; 
-    psychometricScore?: number | null; 
-    vivaScore?: number | null;
-    specialityId?: number | null;
-    panelId?: number | null 
-  };
-  
-  const update: Record<string, unknown> = {};
-  if (mcqScore !== undefined) update["mcqScore"] = mcqScore !== null ? String(mcqScore) : null;
-  if (psychometricScore !== undefined) update["psychometricScore"] = psychometricScore !== null ? String(psychometricScore) : null;
-  
-  const [updated] = await db.update(candidatesTable).set(update).where(eq(candidatesTable.id, id)).returning();
-  if (!updated) { res.status(404).json({ error: "Not found" }); return; }
+  try {
+    const id = Number(req.params["candidateId"]);
+    const { mcqScore, psychometricScore, vivaScore, specialityId, panelId } = req.body as { 
+      mcqScore?: number | null; 
+      psychometricScore?: number | null; 
+      vivaScore?: number | null;
+      specialityId?: number | null;
+      panelId?: number | null 
+    };
+    
+    const update: Record<string, unknown> = {};
+    if (mcqScore !== undefined) update["mcqScore"] = mcqScore !== null ? String(mcqScore) : null;
+    if (psychometricScore !== undefined) update["psychometricScore"] = psychometricScore !== null ? String(psychometricScore) : null;
+    
+    const [updated] = await db.update(candidatesTable).set(update).where(eq(candidatesTable.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "Not found" }); return; }
 
-  // Update or insert direct VIVA score if provided
-  if (vivaScore !== undefined && vivaScore !== null) {
-    const docId = req.user!.userId;
-    // We map to the selected specialityId or fallback to the candidate's first preference
-    let targetSpecId = specialityId;
-    if (!targetSpecId) {
-      const [firstPref] = await db.select().from(candidatePreferencesTable)
-        .where(eq(candidatePreferencesTable.candidateId, id))
-        .orderBy(candidatePreferencesTable.preferenceOrder);
-      if (firstPref) {
-        targetSpecId = firstPref.specialityId;
+    // Update or insert direct VIVA score if provided
+    if (vivaScore !== undefined && vivaScore !== null) {
+      const docId = req.user!.userId;
+      // We map to the selected specialityId or fallback to the candidate's first preference
+      let targetSpecId = specialityId;
+      if (!targetSpecId) {
+        const [firstPref] = await db.select().from(candidatePreferencesTable)
+          .where(eq(candidatePreferencesTable.candidateId, id))
+          .orderBy(candidatePreferencesTable.preferenceOrder);
+        if (firstPref) {
+          targetSpecId = firstPref.specialityId;
+        }
+      }
+
+      if (targetSpecId) {
+        const [existing] = await db.select().from(interviewScoresTable)
+          .where(and(
+            eq(interviewScoresTable.candidateId, id),
+            eq(interviewScoresTable.doctorId, docId),
+            eq(interviewScoresTable.specialityId, targetSpecId)
+          ));
+        if (existing) {
+          await db.update(interviewScoresTable)
+            .set({ score: vivaScore, submittedAt: new Date() })
+            .where(eq(interviewScoresTable.id, existing.id));
+        } else {
+          await db.insert(interviewScoresTable).values({
+            candidateId: id,
+            doctorId: docId,
+            specialityId: targetSpecId,
+            score: vivaScore,
+            remarks: "Coordinator Direct Entry"
+          });
+        }
       }
     }
 
-    if (targetSpecId) {
-      const [existing] = await db.select().from(interviewScoresTable)
-        .where(and(
-          eq(interviewScoresTable.candidateId, id),
-          eq(interviewScoresTable.doctorId, docId),
-          eq(interviewScoresTable.specialityId, targetSpecId)
-        ));
-      if (existing) {
-        await db.update(interviewScoresTable)
-          .set({ score: vivaScore, submittedAt: new Date() })
-          .where(eq(interviewScoresTable.id, existing.id));
-      } else {
-        await db.insert(interviewScoresTable).values({
-          candidateId: id,
-          doctorId: docId,
-          specialityId: targetSpecId,
-          score: vivaScore,
-          remarks: "Coordinator Direct Entry"
-        });
-      }
+    // Optionally add to panel queue
+    if (panelId) {
+      const [maxRow] = (await db.execute(sql`
+        SELECT COALESCE(MAX(queue_position), -1) as max_pos FROM panel_queue WHERE panel_id = ${panelId}
+      `)).rows as Array<Record<string, unknown>>;
+      const nextPos = Number(maxRow!["max_pos"]) + 1;
+      await db.execute(sql`
+        INSERT INTO panel_queue (panel_id, candidate_id, queue_position, status)
+        VALUES (${panelId}, ${id}, ${nextPos}, 'waiting')
+        ON CONFLICT (panel_id, candidate_id) DO NOTHING
+      `);
     }
-  }
 
-  // Optionally add to panel queue
-  if (panelId) {
-    const [maxRow] = (await db.execute(sql`
-      SELECT COALESCE(MAX(queue_position), -1) as max_pos FROM panel_queue WHERE panel_id = ${panelId}
-    `)).rows as Array<Record<string, unknown>>;
-    const nextPos = Number(maxRow!["max_pos"]) + 1;
-    await db.execute(sql`
-      INSERT INTO panel_queue (panel_id, candidate_id, queue_position, status)
-      VALUES (${panelId}, ${id}, ${nextPos}, 'waiting')
-      ON CONFLICT (panel_id, candidate_id) DO NOTHING
-    `);
+    const updatedAny = updated as any;
+    res.json({ 
+      id: updated.id, 
+      mcqScore: updatedAny.mcqScore != null ? Number(updatedAny.mcqScore) : null, 
+      psychometricScore: updatedAny.psychometricScore != null ? Number(updatedAny.psychometricScore) : null 
+    });
+  } catch (err: any) {
+    console.error("[candidates-marks-patch] error:", err);
+    res.status(500).json({ error: err.message || "An unexpected database error occurred while updating marks." });
   }
-
-  const updatedAny = updated as any;
-  res.json({ 
-    id: updated.id, 
-    mcqScore: updatedAny.mcqScore != null ? Number(updatedAny.mcqScore) : null, 
-    psychometricScore: updatedAny.psychometricScore != null ? Number(updatedAny.psychometricScore) : null 
-  });
 });
 
 router.get("/candidates/:candidateId", requireAuth, async (req, res) => {
