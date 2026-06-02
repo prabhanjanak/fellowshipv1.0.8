@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { eq, sql } from "drizzle-orm";
-import { db, usersTable, candidatesTable, globalSettingsTable } from "@workspace/db";
+import { db, usersTable, candidatesTable, globalSettingsTable, auditLogsTable } from "@workspace/db";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { logger } from "../lib/logger";
+
 import { parseSpecializationString } from "../lib/utils";
 
 const router: Router = Router();
@@ -342,12 +343,172 @@ router.delete("/panels/:id/queue/:candidateId",
   async (req, res) => {
     const panelId = Number(req.params["id"]);
     const candidateId = Number(req.params["candidateId"]);
-    await db.execute(sql`
-      DELETE FROM panel_queue WHERE panel_id = ${panelId} AND candidate_id = ${candidateId}
-    `);
-    res.json({ success: true });
+    try {
+      await db.execute(sql`
+        DELETE FROM panel_queue WHERE panel_id = ${panelId} AND candidate_id = ${candidateId}
+      `);
+
+      // Audit Log
+      const ipAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1").split(",")[0]!.trim();
+      const [cand] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, candidateId));
+      await db.insert(auditLogsTable).values({
+        userId: req.user!.userId,
+        userEmail: req.user!.email,
+        action: "QUEUE_REMOVE",
+        details: `Removed candidate ${cand?.fullName || candidateId} from panel queue ID ${panelId}`,
+        ipAddress,
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      logger.error({ err }, "Failed to remove from queue");
+      res.status(500).json({ error: err.message || "Failed to remove from queue" });
+    }
   }
 );
+
+// POST /panels/:id/queue/reorder — Drag and drop queue ordering
+router.post("/panels/:id/queue/reorder",
+  requireAuth,
+  requireRole("super_admin", "program_admin", "central_exam_coordinator"),
+  async (req, res) => {
+    const panelId = Number(req.params["id"]);
+    const { candidateIds } = req.body as { candidateIds: number[] };
+    if (!Array.isArray(candidateIds)) {
+      res.status(400).json({ error: "candidateIds array required" });
+      return;
+    }
+    try {
+      for (let i = 0; i < candidateIds.length; i++) {
+        await db.execute(sql`
+          UPDATE panel_queue 
+          SET queue_position = ${i} 
+          WHERE panel_id = ${panelId} AND candidate_id = ${candidateIds[i]}
+        `);
+      }
+
+      // Audit Log
+      const ipAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1").split(",")[0]!.trim();
+      await db.insert(auditLogsTable).values({
+        userId: req.user!.userId,
+        userEmail: req.user!.email,
+        action: "QUEUE_REORDER",
+        details: `Reordered queue for panel ID ${panelId} containing ${candidateIds.length} candidates.`,
+        ipAddress,
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      logger.error({ err }, "Queue reordering failed");
+      res.status(500).json({ error: err.message || "Failed to reorder queue." });
+    }
+  }
+);
+
+// POST /panels/:id/queue/insert — Emergency priority candidate insertion
+router.post("/panels/:id/queue/insert",
+  requireAuth,
+  requireRole("super_admin", "program_admin", "central_exam_coordinator"),
+  async (req, res) => {
+    const panelId = Number(req.params["id"]);
+    const { candidateId, position } = req.body as { candidateId: number; position: number };
+    if (!candidateId || position == null) {
+      res.status(400).json({ error: "candidateId and position required" });
+      return;
+    }
+    try {
+      // Shift subsequent queue entries down
+      await db.execute(sql`
+        UPDATE panel_queue 
+        SET queue_position = queue_position + 1 
+        WHERE panel_id = ${panelId} AND queue_position >= ${position}
+      `);
+
+      // Insert target candidate at position
+      await db.execute(sql`
+        INSERT INTO panel_queue (panel_id, candidate_id, queue_position, status)
+        VALUES (${panelId}, ${candidateId}, ${position}, 'waiting')
+        ON CONFLICT (panel_id, candidate_id) DO UPDATE 
+        SET queue_position = ${position}, status = 'waiting', called_at = NULL
+      `);
+
+      // Audit Log
+      const ipAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1").split(",")[0]!.trim();
+      const [cand] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, candidateId));
+      await db.insert(auditLogsTable).values({
+        userId: req.user!.userId,
+        userEmail: req.user!.email,
+        action: "QUEUE_INSERT",
+        details: `Inserted candidate ${cand?.fullName || candidateId} at priority position ${position} in panel ID ${panelId}`,
+        ipAddress,
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      logger.error({ err }, "Emergency queue insertion failed");
+      res.status(500).json({ error: err.message || "Failed to insert candidate." });
+    }
+  }
+);
+
+// POST /panels/:id/queue/reassign — Transfer candidate to another panel
+router.post("/panels/:id/queue/reassign",
+  requireAuth,
+  requireRole("super_admin", "program_admin", "central_exam_coordinator"),
+  async (req, res) => {
+    const sourcePanelId = Number(req.params["id"]);
+    const { candidateId, targetPanelId } = req.body as { candidateId: number; targetPanelId: number };
+    if (!candidateId || !targetPanelId) {
+      res.status(400).json({ error: "candidateId and targetPanelId required" });
+      return;
+    }
+    try {
+      // 1. Remove from source panel queue
+      await db.execute(sql`
+        DELETE FROM panel_queue 
+        WHERE panel_id = ${sourcePanelId} AND candidate_id = ${candidateId}
+      `);
+
+      // 2. Fetch max position on target panel
+      const [maxRow] = (await db.execute(sql`
+        SELECT COALESCE(MAX(queue_position), -1) as max_pos FROM panel_queue WHERE panel_id = ${targetPanelId}
+      `)).rows as Array<Record<string, unknown>>;
+      const nextPos = Number(maxRow!["max_pos"]) + 1;
+
+      // 3. Add to target panel queue
+      await db.execute(sql`
+        INSERT INTO panel_queue (panel_id, candidate_id, queue_position, status)
+        VALUES (${targetPanelId}, ${candidateId}, ${nextPos}, 'waiting')
+        ON CONFLICT (panel_id, candidate_id) DO UPDATE 
+        SET queue_position = ${nextPos}, status = 'waiting', called_at = NULL
+      `);
+
+      // 4. Release doctors' engagement status on source panel if they were interviewing this student
+      await db.execute(sql`
+        UPDATE doctor_panel_status 
+        SET is_engaged = FALSE, current_candidate_id = NULL, updated_at = NOW()
+        WHERE current_candidate_id = ${candidateId}
+      `);
+
+      // Audit Log
+      const ipAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1").split(",")[0]!.trim();
+      const [cand] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, candidateId));
+      await db.insert(auditLogsTable).values({
+        userId: req.user!.userId,
+        userEmail: req.user!.email,
+        action: "STUDENT_REASSIGNMENT",
+        details: `Reassigned candidate ${cand?.fullName || candidateId} from panel ID ${sourcePanelId} to panel ID ${targetPanelId}`,
+        ipAddress,
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      logger.error({ err }, "Candidate queue reassignment failed");
+      res.status(500).json({ error: err.message || "Failed to reassign candidate." });
+    }
+  }
+);
+
 
 // ── Public Display Endpoint (display_operator or admin) ────────────────────────
 

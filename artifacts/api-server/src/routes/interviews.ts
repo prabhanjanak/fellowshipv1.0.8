@@ -11,7 +11,8 @@ import {
   applicationSubmissionsTable,
   specialitiesTable,
   batchCandidatesTable,
-  batchesTable
+  batchesTable,
+  auditLogsTable
 } from "@workspace/db";
 import { requireAuth, requireRole } from "../middleware/auth";
 import * as XLSX from "xlsx";
@@ -249,24 +250,62 @@ router.post("/interviews/scores", requireAuth, requireRole("doctor"), async (req
   }
   if (!row) { res.status(500).json({ error: "Failed to submit score" }); return; }
 
-  // Update applicationsTable status for this specialization
+  // Update applicationsTable status for this specialization to completed
   if (specialityId) {
-    await db.update(applicationsTable).set({ status: "interviewed" })
+    await db.update(applicationsTable).set({ status: "completed" })
       .where(and(
         eq(applicationsTable.candidateId, candidateId),
         eq(applicationsTable.specialityId, specialityId)
       ));
   }
 
-  // If all specializations are completed, update candidatesTable status
-  const pendingApps = await db.select().from(applicationsTable).where(
-    and(
-      eq(applicationsTable.candidateId, candidateId),
-      eq(applicationsTable.status, "approved")
-    )
-  );
-  if (pendingApps.length === 0) {
-    await db.update(candidatesTable).set({ status: "interview_completed" }).where(eq(candidatesTable.id, candidateId));
+  // Multi-specialty completion matrix check:
+  // Candidate is interview_completed if they have a Mind Mapping score AND all applied specialities have at least one score
+  const [cand] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, candidateId));
+  if (cand) {
+    const isMindMappingCompleted = cand.psychometricScore !== null && cand.psychometricScore !== undefined && String(cand.psychometricScore).trim() !== "";
+    const apps = await db.select().from(applicationsTable).where(eq(applicationsTable.candidateId, candidateId));
+    const scores = await db.select().from(interviewScoresTable).where(eq(interviewScoresTable.candidateId, candidateId));
+
+    let allSpecialtiesCompleted = true;
+    for (const app of apps) {
+      const hasScore = scores.some(s => s.specialityId === app.specialityId);
+      if (!hasScore) {
+        allSpecialtiesCompleted = false;
+        if (app.status === "completed") {
+          await db.update(applicationsTable).set({ status: "approved" }).where(eq(applicationsTable.id, app.id));
+        }
+      } else {
+        if (app.status !== "completed") {
+          await db.update(applicationsTable).set({ status: "completed" }).where(eq(applicationsTable.id, app.id));
+        }
+      }
+    }
+
+    if (isMindMappingCompleted && allSpecialtiesCompleted) {
+      await db.update(candidatesTable).set({ status: "interview_completed" }).where(eq(candidatesTable.id, candidateId));
+    } else {
+      if (cand.status === "interview_completed") {
+        await db.update(candidatesTable).set({ status: "approved" }).where(eq(candidatesTable.id, candidateId));
+      }
+    }
+  }
+
+  // Audit Log the grade entry
+  try {
+    const ipAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1").split(",")[0]!.trim();
+    const [doc] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+    const [spec] = specialityId ? await db.select().from(specialitiesTable).where(eq(specialitiesTable.id, specialityId)) : [null];
+    const specName = spec?.name ?? "General";
+    await db.insert(auditLogsTable).values({
+      userId,
+      userEmail: req.user!.email,
+      action: "MARK_ENTRY",
+      details: `Doctor ${doc?.fullName || userId} submitted Specialty ${specName} Viva score: ${score} for candidate ${cand?.fullName || candidateId}`,
+      ipAddress,
+    });
+  } catch (err) {
+    console.error("Failed to insert score audit log:", err);
   }
 
   // Update doctor assignments strictly for this specialization
@@ -476,7 +515,11 @@ router.get("/interviews/scores/export", requireAuth, requireRole("super_admin", 
     const allBatchCand = await db.select().from(batchCandidatesTable);
     const allScores = await db.select().from(interviewScoresTable);
     const allDoctors = await db.select().from(usersTable).where(eq(usersTable.role, "doctor"));
-    
+    const allApps = await db.select().from(applicationsTable);
+
+    const panelQuery = await db.execute(sql`SELECT id, name, room_number, speciality_id FROM interview_panels`);
+    const allPanels = panelQuery.rows as Array<Record<string, any>>;
+
     let filteredCandidates = candidates;
     if (specId !== undefined) {
       const { candidatePreferencesTable, applicationsTable } = await import("@workspace/db");
@@ -489,62 +532,121 @@ router.get("/interviews/scores/export", requireAuth, requireRole("super_admin", 
       filteredCandidates = candidates.filter(c => eligibleIds.has(c.id));
     }
     
-    const rows = filteredCandidates.map((c) => {
+    const rawRows: any[] = [];
+    for (const c of filteredCandidates) {
       const sub = allSubmissions.find((s) => s.email.toLowerCase() === c.email.toLowerCase());
+      const candidateApps = allApps.filter(app => app.candidateId === c.id);
       
-      const candidateBatchCands = allBatchCand.filter((bc) => bc.candidateId === c.id);
-      const specIds = candidateBatchCands.map(bc => bc.specialityId).filter(Boolean);
-      let specs = allSpecs.filter(sp => specIds.includes(sp.id)).map(sp => sp.name);
-      if (specs.length === 0 && sub?.specialization) {
-        specs = parseSpecializationString(sub.specialization);
+      let candidateSpecs = candidateApps.map(app => allSpecs.find(sp => sp.id === app.specialityId)).filter(Boolean) as any[];
+      if (candidateSpecs.length === 0 && sub?.specialization) {
+        const parsedNames = parseSpecializationString(sub.specialization);
+        candidateSpecs = allSpecs.filter(sp => parsedNames.some(pn => pn.toLowerCase() === sp.name.toLowerCase()));
       }
-      const specializationStr = specs.length > 0 ? specs.join(", ") : "General";
-      
-      const bcRow = candidateBatchCands[0];
-      
-      const rawMcq = bcRow?.mcqScore ?? (c.mcqScore ? Number(c.mcqScore) : null);
-      const mcqScore = rawMcq != null ? Number(rawMcq) : null;
-      
-      const rawPsy = bcRow?.psychometricScore ?? (c.psychometricScore ? Number(c.psychometricScore) : null);
-      const psychometricScore = rawPsy != null ? Number(rawPsy) : null;
+      if (candidateSpecs.length === 0) {
+        candidateSpecs = [{ id: null, name: "General", code: "GEN" }];
+      }
 
-      const candScores = allScores.filter(s => s.candidateId === c.id);
-      
-      const doctorCols: Record<string, string | number> = {};
-      allDoctors.forEach((doc) => {
-        const docScore = candScores.find(s => s.doctorId === doc.id);
-        doctorCols[`Score - Dr. ${doc.fullName}`] = docScore != null ? docScore.score : "—";
-      });
+      if (specId !== undefined) {
+        candidateSpecs = candidateSpecs.filter(sp => sp.id === specId);
+      }
 
-      const docScores = candScores.map(s => s.score);
-      const avgVivaScore = docScores.length > 0 
-        ? docScores.reduce((acc, val) => acc + val, 0) / docScores.length
-        : null;
+      for (const spec of candidateSpecs) {
+        const candScores = allScores.filter(s => s.candidateId === c.id && (spec.id ? s.specialityId === spec.id : true));
+        const sortedCandScores = [...candScores].sort((a, b) => a.doctorId - b.doctorId);
+        
+        const doc1 = sortedCandScores[0]?.score ?? "—";
+        const doc2 = sortedCandScores[1]?.score ?? "—";
+        const doc3 = sortedCandScores[2]?.score ?? "—";
+        const doc4 = sortedCandScores[3]?.score ?? "—";
 
-      const totalScore = (mcqScore != null || avgVivaScore != null || psychometricScore != null)
-        ? (mcqScore ?? 0) + (avgVivaScore ?? 0) + (psychometricScore ?? 0)
-        : null;
+        const docScores = candScores.map(s => s.score);
+        const avgVivaScore = docScores.length > 0 
+          ? docScores.reduce((acc, val) => acc + val, 0) / docScores.length
+          : null;
 
-      return {
-        "Candidate ID": c.candidateCode,
-        "Student Name": c.fullName,
-        "Email": c.email,
-        "Phone": c.phone || "N/A",
-        "College": c.collegeName || sub?.medicalCollege || "N/A",
-        "Specialization": specializationStr,
-        "MCQ Score (max 50)": mcqScore != null ? mcqScore : "—",
-        "Mind Matter Score (max 10)": psychometricScore != null ? psychometricScore : "—",
-        ...doctorCols,
-        "Average VIVA Score (max 50)": avgVivaScore != null ? Number(avgVivaScore.toFixed(2)) : "—",
-        "Total Score (max 110)": totalScore != null ? Number(totalScore.toFixed(2)) : "—",
-      };
+        const candidateBatchCands = allBatchCand.filter((bc) => bc.candidateId === c.id);
+        const bcRow = candidateBatchCands[0];
+        const rawMcq = bcRow?.mcqScore ?? (c.mcqScore ? Number(c.mcqScore) : null);
+        const mcqScore = rawMcq != null ? Number(rawMcq) : null;
+        
+        const rawPsy = bcRow?.psychometricScore ?? (c.psychometricScore ? Number(c.psychometricScore) : null);
+        const psychometricScore = rawPsy != null ? Number(rawPsy) : null;
+
+        const totalScore = (mcqScore != null || avgVivaScore != null || psychometricScore != null)
+          ? (mcqScore ?? 0) + (avgVivaScore ?? 0) + (psychometricScore ?? 0)
+          : null;
+
+        const appForSpec = allApps.find(app => app.candidateId === c.id && app.specialityId === spec.id);
+        const status = appForSpec?.status ?? c.status;
+
+        const panel = allPanels.find(p => {
+          const pSpecId = p["speciality_id"] !== undefined ? p["speciality_id"] : p["specialityId"];
+          return pSpecId != null && Number(pSpecId) === spec.id;
+        });
+        const panelName = panel ? `${panel["name"]} (Room ${panel["room_number"] || panel["roomNumber"]})` : "General";
+
+        const evaluators = candScores.map(s => allDoctors.find(d => d.id === s.doctorId)?.fullName).filter(Boolean).join(", ") || "None";
+
+        rawRows.push({
+          "Candidate Name": c.fullName,
+          "Specialty": spec.name,
+          "MCQ Marks": mcqScore != null ? mcqScore : "—",
+          "Mind Mapping Marks": psychometricScore != null ? psychometricScore : "—",
+          "Doctor 1 Marks": doc1,
+          "Doctor 2 Marks": doc2,
+          "Doctor 3 Marks": doc3,
+          "Doctor 4 Marks": doc4,
+          "Average Viva": avgVivaScore != null ? Number(avgVivaScore.toFixed(2)) : "—",
+          "Final Score": totalScore,
+          "Rank": 0, // Will be filled after sorting
+          "Status": status,
+          "Panel": panelName,
+          "Evaluators": evaluators
+        });
+      }
+    }
+
+    // Sort stably: non-null Final Score first, descending order
+    rawRows.sort((a, b) => {
+      if (a["Final Score"] === null && b["Final Score"] === null) return 0;
+      if (a["Final Score"] === null) return 1;
+      if (b["Final Score"] === null) return -1;
+      return b["Final Score"] - a["Final Score"];
     });
+
+    // Populate the Rank column
+    let rank = 1;
+    for (let i = 0; i < rawRows.length; i++) {
+      if (rawRows[i]["Final Score"] !== null) {
+        rawRows[i]["Rank"] = rank++;
+      } else {
+        rawRows[i]["Rank"] = "—";
+      }
+    }
+
+    // Format for display
+    const finalRows = rawRows.map(row => ({
+      "Candidate Name": row["Candidate Name"],
+      "Specialty": row["Specialty"],
+      "MCQ Marks": row["MCQ Marks"],
+      "Mind Mapping Marks": row["Mind Mapping Marks"],
+      "Doctor 1 Marks": row["Doctor 1 Marks"],
+      "Doctor 2 Marks": row["Doctor 2 Marks"],
+      "Doctor 3 Marks": row["Doctor 3 Marks"],
+      "Doctor 4 Marks": row["Doctor 4 Marks"],
+      "Average Viva": row["Average Viva"],
+      "Final Score": row["Final Score"] !== null ? Number(row["Final Score"].toFixed(2)) : "—",
+      "Rank": row["Rank"],
+      "Status": row["Status"],
+      "Panel": row["Panel"],
+      "Evaluators": row["Evaluators"]
+    }));
 
     const wb = XLSX.utils.book_new();
     const sheetTitle = specId !== undefined 
       ? (allSpecs.find(s => s.id === specId)?.name || "Specialized") 
       : "Central Marksheet";
-    const ws = buildStyledSheet(rows, "0B4A8F");
+    const ws = buildStyledSheet(finalRows, "0B4A8F");
     XLSX.utils.book_append_sheet(wb, ws, sheetTitle.substring(0, 31));
     
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx", cellStyles: true });

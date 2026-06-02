@@ -28,6 +28,7 @@ import {
   CreditCard,
   Monitor,
   Mail,
+  Activity,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 
@@ -55,6 +56,7 @@ const navItems: NavItem[] = [
   { label: "Reports",           href: "/reports",            icon: BarChart3,       roles: ["super_admin", "program_admin", "central_exam_coordinator", "exam_coordinator"] },
   { label: "My Results",        href: "/results",            icon: FileText,        roles: ["student"] },
   { label: "Waiting Hall (TV)",   href: "/tv",              icon: Monitor,         roles: ["super_admin", "program_admin", "central_exam_coordinator", "display_operator"] },
+  { label: "Active Sessions",     href: "/active-sessions",    icon: Activity,        roles: ["super_admin", "program_admin", "central_exam_coordinator"] },
 ];
 
 const roleLabel: Record<string, string> = {
@@ -142,19 +144,6 @@ function SidebarContent({ onNavigate, collapsed }: { onNavigate?: () => void; co
           </div>
         </Link>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          title={collapsed ? (theme === "dark" ? "Light Mode" : "Dark Mode") : undefined}
-          className={cn(
-            "w-full justify-start text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground gap-2",
-            collapsed && "px-2 justify-center"
-          )}
-          onClick={toggleTheme}
-        >
-          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          {!collapsed && (theme === "dark" ? "Light Mode" : "Dark Mode")}
-        </Button>
 
         <Button
           variant="ghost"

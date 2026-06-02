@@ -1,8 +1,9 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { db, usersTable, applicationFormsTable, programsTable, candidatesTable, applicationSubmissionsTable, specialitiesTable, candidatePreferencesTable, applicationsTable } from "@workspace/db";
+import { db, usersTable, applicationFormsTable, programsTable, candidatesTable, applicationSubmissionsTable, specialitiesTable, candidatePreferencesTable, applicationsTable, globalSettingsTable } from "@workspace/db";
 import { eq, sql, ilike, and } from "drizzle-orm";
 import { parseSpecializationString } from "./lib/utils";
+
 import { DEFAULT_SECTIONS } from "./lib/default-sections";
 
 const rawPort = process.env["PORT"];
@@ -353,7 +354,24 @@ async function runStartupFixes() {
   } catch (err: any) {
     logger.error({ err }, "Candidates database compatibility healing migration failed");
   }
+
+  // Start periodic active session cleanup job
+  setInterval(async () => {
+    try {
+      const [setting] = await db.select().from(globalSettingsTable).where(eq(globalSettingsTable.key, "session_inactivity_timeout"));
+      const timeoutMinutes = setting ? parseInt(setting.value, 10) : 30;
+      const threshold = new Date(Date.now() - timeoutMinutes * 60 * 1000);
+      await db.execute(sql`
+        UPDATE user_sessions 
+        SET is_active = FALSE 
+        WHERE is_active = TRUE AND last_activity_at < ${threshold}
+      `);
+    } catch (e) {
+      logger.error({ err: e }, "Failed to prune inactive sessions");
+    }
+  }, 5 * 60 * 1000); // run every 5 minutes
 }
+
 
 app.listen(port, (err) => {
   if (err) {

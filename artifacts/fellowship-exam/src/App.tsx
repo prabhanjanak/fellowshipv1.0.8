@@ -33,6 +33,7 @@ import NotFound from "./pages/not-found";
 import { Loader2 } from "lucide-react";
 import EmailSettingsPage from "./pages/EmailSettingsPage";
 import VerifyLorPage from "./pages/VerifyLorPage";
+import ActiveSessionsPage from "./pages/ActiveSessionsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -89,6 +90,7 @@ function AppRouter() {
             <Route path="/display" component={DisplayPage} />
             <Route path="/tv" component={QueueDisplayPage} />
             <Route path="/verify-lor" component={VerifyLorPage} />
+            <Route path="/active-sessions" component={ActiveSessionsPage} />
             <Route component={NotFound} />
           </Switch>
         </PageTransition>

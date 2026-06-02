@@ -43,7 +43,7 @@ export default function QueueDisplayPage() {
   const { data: panels = [], isLoading: isLoadingPanels } = useQuery({
     queryKey: ["display-live"],
     queryFn: () => api.get<any[]>("/display/live"),
-    refetchInterval: 4000, 
+    refetchInterval: 3000, 
     enabled: isVerified,
   });
 

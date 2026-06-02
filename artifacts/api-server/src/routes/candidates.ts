@@ -13,6 +13,7 @@ import {
   examAttemptsTable,
   examsTable,
   interviewScoresTable,
+  auditLogsTable,
   allocationsTable,
   doctorAssignmentsTable,
   candidateExamAssignmentsTable,
@@ -798,6 +799,46 @@ router.post("/candidates", requireAuth, requireRole("super_admin", "program_admi
 });
 
 // CEC or admin: update MCQ / psychometric / VIVA scores (+ optionally assign to panel queue)
+// Helper function to recalculate candidate completion status
+export async function recalculateCandidateStatus(candidateId: number): Promise<void> {
+  const [cand] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, candidateId));
+  if (!cand) return;
+
+  const apps = await db.select().from(applicationsTable).where(eq(applicationsTable.candidateId, candidateId));
+  if (apps.length === 0) return;
+
+  const isMindMappingCompleted = cand.psychometricScore !== null && cand.psychometricScore !== undefined && String(cand.psychometricScore).trim() !== "";
+
+  const scores = await db.select().from(interviewScoresTable).where(eq(interviewScoresTable.candidateId, candidateId));
+
+  let allSpecialtiesCompleted = true;
+  for (const app of apps) {
+    const hasScore = scores.some(s => s.specialityId === app.specialityId);
+    if (!hasScore) {
+      allSpecialtiesCompleted = false;
+      // Mark individual specialization application status
+      if (app.status === "completed") {
+        await db.update(applicationsTable).set({ status: "approved" }).where(eq(applicationsTable.id, app.id));
+      }
+    } else {
+      if (app.status !== "completed") {
+        await db.update(applicationsTable).set({ status: "completed" }).where(eq(applicationsTable.id, app.id));
+      }
+    }
+  }
+
+  const overallCompleted = isMindMappingCompleted && allSpecialtiesCompleted;
+
+  if (overallCompleted) {
+    await db.update(candidatesTable).set({ status: "interview_completed" }).where(eq(candidatesTable.id, candidateId));
+  } else {
+    if (cand.status === "interview_completed") {
+      await db.update(candidatesTable).set({ status: "approved" }).where(eq(candidatesTable.id, candidateId));
+    }
+  }
+}
+
+// CEC or admin: update MCQ / psychometric / VIVA scores (+ optionally assign to panel queue)
 router.patch("/candidates/:candidateId/marks", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req, res) => {
   try {
     const id = Number(req.params["candidateId"]);
@@ -810,12 +851,28 @@ router.patch("/candidates/:candidateId/marks", requireAuth, requireRole("super_a
       targetDoctorId?: number | null;
     };
     
+    // Validations
     if (vivaScore !== undefined && vivaScore !== null) {
       if (vivaScore < 0 || vivaScore > 50) {
         res.status(400).json({ error: "VIVA score must be between 0 and 50." });
         return;
       }
     }
+    if (mcqScore !== undefined && mcqScore !== null) {
+      if (mcqScore < 0 || mcqScore > 50) {
+        res.status(400).json({ error: "MCQ score must be between 0 and 50." });
+        return;
+      }
+    }
+    if (psychometricScore !== undefined && psychometricScore !== null) {
+      if (psychometricScore < 0 || psychometricScore > 10) {
+        res.status(400).json({ error: "Mind Mapping score must be between 0 and 10." });
+        return;
+      }
+    }
+
+    const [candBefore] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, id));
+    if (!candBefore) { res.status(404).json({ error: "Candidate not found." }); return; }
 
     const update: Record<string, unknown> = {};
     if (mcqScore !== undefined) update["mcqScore"] = mcqScore !== null ? String(mcqScore) : null;
@@ -823,6 +880,31 @@ router.patch("/candidates/:candidateId/marks", requireAuth, requireRole("super_a
     
     const [updated] = await db.update(candidatesTable).set(update).where(eq(candidatesTable.id, id)).returning();
     if (!updated) { res.status(404).json({ error: "Not found" }); return; }
+
+    const ipAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1").split(",")[0]!.trim();
+
+    // Audit logs for MCQ and psychometric changes
+    if (mcqScore !== undefined && String(mcqScore) !== String(candBefore.mcqScore)) {
+      await db.insert(auditLogsTable).values({
+        userId: req.user!.userId,
+        userEmail: req.user!.email,
+        userName: req.user!.email,
+        action: "MARK_MODIFY",
+        details: `Updated MCQ Score for candidate ${candBefore.fullName} (${candBefore.candidateCode}) from ${candBefore.mcqScore ?? "N/A"} to ${mcqScore ?? "N/A"}`,
+        ipAddress,
+      });
+    }
+
+    if (psychometricScore !== undefined && String(psychometricScore) !== String(candBefore.psychometricScore)) {
+      await db.insert(auditLogsTable).values({
+        userId: req.user!.userId,
+        userEmail: req.user!.email,
+        userName: req.user!.email,
+        action: "MARK_MODIFY",
+        details: `Updated Mind Mapping Score for candidate ${candBefore.fullName} (${candBefore.candidateCode}) from ${candBefore.psychometricScore ?? "N/A"} to ${psychometricScore ?? "N/A"}`,
+        ipAddress,
+      });
+    }
 
     // Update or insert direct VIVA score if provided
     if (vivaScore !== undefined) {
@@ -843,25 +925,44 @@ router.patch("/candidates/:candidateId/marks", requireAuth, requireRole("super_a
       }
 
       if (targetSpecId) {
+        const [doc] = await db.select().from(usersTable).where(eq(usersTable.id, docId));
+        const doctorName = doc?.fullName ?? `Doctor ID ${docId}`;
+
+        const [spec] = await db.select().from(specialitiesTable).where(eq(specialitiesTable.id, targetSpecId));
+        const specName = spec?.name ?? `Specialty ID ${targetSpecId}`;
+
+        const [existing] = await db.select().from(interviewScoresTable)
+          .where(and(
+            eq(interviewScoresTable.candidateId, id),
+            eq(interviewScoresTable.doctorId, docId),
+            eq(interviewScoresTable.specialityId, targetSpecId)
+          ));
+
         if (vivaScore === null) {
-          // Admin wants to clear/delete the score for this doctor
-          await db.delete(interviewScoresTable)
-            .where(and(
-              eq(interviewScoresTable.candidateId, id),
-              eq(interviewScoresTable.doctorId, docId),
-              eq(interviewScoresTable.specialityId, targetSpecId)
-            ));
+          if (existing) {
+            await db.delete(interviewScoresTable).where(eq(interviewScoresTable.id, existing.id));
+            
+            await db.insert(auditLogsTable).values({
+              userId: req.user!.userId,
+              userEmail: req.user!.email,
+              action: "MARK_MODIFY",
+              details: `Deleted Specialty ${specName} Viva score entered by Doctor ${doctorName} for candidate ${candBefore.fullName} (${candBefore.candidateCode})`,
+              ipAddress,
+            });
+          }
         } else {
-          const [existing] = await db.select().from(interviewScoresTable)
-            .where(and(
-              eq(interviewScoresTable.candidateId, id),
-              eq(interviewScoresTable.doctorId, docId),
-              eq(interviewScoresTable.specialityId, targetSpecId)
-            ));
           if (existing) {
             await db.update(interviewScoresTable)
               .set({ score: vivaScore, submittedAt: new Date() })
               .where(eq(interviewScoresTable.id, existing.id));
+
+            await db.insert(auditLogsTable).values({
+              userId: req.user!.userId,
+              userEmail: req.user!.email,
+              action: "MARK_MODIFY",
+              details: `Updated Specialty ${specName} Viva score for candidate ${candBefore.fullName} (${candBefore.candidateCode}) entered by Doctor ${doctorName} from ${existing.score} to ${vivaScore}`,
+              ipAddress,
+            });
           } else {
             await db.insert(interviewScoresTable).values({
               candidateId: id,
@@ -870,10 +971,21 @@ router.patch("/candidates/:candidateId/marks", requireAuth, requireRole("super_a
               score: vivaScore,
               remarks: "Coordinator Direct Entry"
             });
+
+            await db.insert(auditLogsTable).values({
+              userId: req.user!.userId,
+              userEmail: req.user!.email,
+              action: "MARK_ENTRY",
+              details: `Directly entered Specialty ${specName} Viva score (${vivaScore}) for candidate ${candBefore.fullName} (${candBefore.candidateCode}) attributed to Doctor ${doctorName}`,
+              ipAddress,
+            });
           }
         }
       }
     }
+
+    // Recalculate status dynamically
+    await recalculateCandidateStatus(id);
 
     // Optionally add to panel queue
     if (panelId) {

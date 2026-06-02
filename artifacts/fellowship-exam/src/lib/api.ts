@@ -44,6 +44,19 @@ export function clearToken(): void {
   localStorage.removeItem("fellowship_token");
 }
 
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 1000): Promise<Response> {
+  try {
+    return await fetch(url, options);
+  } catch (err: any) {
+    if (retries > 0) {
+      console.warn(`Fetch failed: ${err.message}. Retrying in ${delay}ms... (${retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retries - 1, delay * 2);
+    }
+    throw err;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -52,7 +65,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetchWithRetry(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new ApiError(res.status, body);
@@ -66,7 +79,7 @@ export const api = {
     const token = getToken();
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    return fetch(`${API_BASE}${path}`, { headers }).then(res => {
+    return fetchWithRetry(`${API_BASE}${path}`, { headers }).then(res => {
       if (!res.ok) throw new Error("Failed to download");
       return res.blob();
     });

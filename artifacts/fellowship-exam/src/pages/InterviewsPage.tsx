@@ -14,6 +14,8 @@ import {
   Stethoscope, UserPlus, Trash2, Star, Activity, RadioTower,
   LayoutGrid, Plus, Settings, Users, ArrowRight, CheckCircle2,
   Clock, DoorOpen, UserCheck, X, FileText, Loader2,
+  ChevronUp, ChevronDown, ExternalLink, ShieldAlert,
+  AlertTriangle, HelpCircle
 } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 
@@ -89,11 +91,23 @@ function DoctorView({ toast, qc }: { toast: ReturnType<typeof import("../hooks/u
   const [scoreOpen, setScoreOpen] = useState<DoctorAssignment | null>(null);
   const [score, setScore] = useState("");
   const [remarks, setRemarks] = useState("");
+  const [activeDossierTab, setActiveDossierTab] = useState<"profile" | "pdf" | "lors" | "docs">("profile");
 
   const { data: assignments = [] } = useQuery<DoctorAssignment[]>({
     queryKey: ["doctor-assignments"],
     queryFn: () => api.get<DoctorAssignment[]>("/interviews/assignments"),
     refetchInterval: 3000,
+  });
+
+  const { data: candDetails, isLoading: candLoading } = useQuery<any>({
+    queryKey: ["candidate-details", scoreOpen?.candidateId],
+    queryFn: () => api.get(`/candidates/${scoreOpen?.candidateId}`),
+    enabled: !!scoreOpen?.candidateId,
+  });
+
+  const { data: specialities = [] } = useQuery<{ id: number; name: string; code: string }[]>({
+    queryKey: ["specialities"],
+    queryFn: () => api.get("/specialities"),
   });
 
   const { data: myStatus } = useQuery<{
@@ -230,7 +244,7 @@ function DoctorView({ toast, qc }: { toast: ReturnType<typeof import("../hooks/u
         </Card>
       )}
 
-      <Dialog open={!!scoreOpen} onOpenChange={() => setScoreOpen(null)}>
+      <Dialog open={!!scoreOpen} onOpenChange={() => { setScoreOpen(null); setActiveDossierTab("profile"); }}>
         <DialogContent className="max-w-5xl w-[90vw] p-0 rounded-3xl overflow-hidden border-none bg-white shadow-2xl">
           <DialogHeader className="bg-slate-900 text-white p-6 shrink-0 border-b border-white/5 flex flex-row items-center justify-between">
             <div>
@@ -240,7 +254,7 @@ function DoctorView({ toast, qc }: { toast: ReturnType<typeof import("../hooks/u
               </DialogTitle>
               {scoreOpen?.specialityName && (
                 <Badge variant="outline" className="mt-2 text-[10px] font-black uppercase text-indigo-200 border-indigo-500/30 bg-indigo-500/10 h-6 px-3">
-                  Specialization: {scoreOpen.specialityName}
+                  Specialization Panel: {scoreOpen.specialityName}
                 </Badge>
               )}
             </div>
@@ -248,28 +262,244 @@ function DoctorView({ toast, qc }: { toast: ReturnType<typeof import("../hooks/u
 
           {scoreOpen && (
             <div className="grid grid-cols-1 md:grid-cols-5 gap-0 h-[70vh]">
-              {/* Left Column: Comprehensive Printable Form with LOR */}
-              <div className="md:col-span-3 border-r bg-slate-50 flex flex-col p-4 space-y-3">
-                <div className="flex justify-between items-center px-1">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                    <FileText className="h-3.5 w-3.5 text-slate-400" />
-                    Applicant Dossier & Reference LOR Files
-                  </span>
-                  <Badge variant="outline" className="text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border-slate-200 h-5">
+              {/* Left Column: Comprehensive Tabbed Dossier View with Lazy Loading */}
+              <div className="md:col-span-3 border-r bg-slate-50 flex flex-col p-4 space-y-3 overflow-hidden">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b pb-2">
+                  <div className="flex gap-1.5 flex-wrap">
+                    {[
+                      { id: "profile" as const, label: "Profile" },
+                      { id: "pdf" as const, label: "Application Form" },
+                      { id: "lors" as const, label: "LORs" },
+                      { id: "docs" as const, label: "Supporting Documents" }
+                    ].map(tab => (
+                      <Button
+                        key={tab.id}
+                        variant={activeDossierTab === tab.id ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setActiveDossierTab(tab.id)}
+                        className={`h-7 px-3 text-[10px] font-black uppercase tracking-wider rounded-lg border-none ${activeDossierTab === tab.id ? "bg-slate-950 text-white hover:bg-slate-900" : "text-slate-500 hover:bg-slate-200"}`}
+                      >
+                        {tab.label}
+                      </Button>
+                    ))}
+                  </div>
+                  <Badge variant="outline" className="text-[9px] font-black uppercase bg-slate-100 text-slate-500 border-slate-250 h-5 self-start">
                     Code: {scoreOpen.candidateCode}
                   </Badge>
                 </div>
-                <div className="flex-1 border border-slate-200/80 rounded-2xl overflow-hidden bg-white shadow-sm relative">
-                  {scoreOpen.submissionId ? (
-                    <iframe 
-                      src={`/api/submission-view/${scoreOpen.submissionId}?token=${localStorage.getItem("fellowship_token")}`} 
-                      className="w-full h-full border-none" 
-                      title="Candidate Application Form"
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-muted-foreground text-sm font-semibold">
-                      No print submission available
+
+                <div className="flex-1 border border-slate-200/85 rounded-2xl overflow-y-auto bg-white shadow-sm p-4 relative">
+                  {candLoading ? (
+                    <div className="flex items-center justify-center h-full text-slate-450 gap-2 font-bold text-sm">
+                      <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                      Loading dossiers...
                     </div>
+                  ) : (
+                    <>
+                      {/* PROFILE TAB */}
+                      {activeDossierTab === "profile" && (
+                        <div className="space-y-6">
+                          <div className="flex items-center gap-5 flex-wrap sm:flex-nowrap border-b pb-4">
+                            <div className="h-24 w-24 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center font-black text-4xl text-orange-600 shadow-sm shrink-0 overflow-hidden relative">
+                              {(() => {
+                                const photoDoc = candDetails?.documents?.find((d: any) => 
+                                  d.docType?.toLowerCase().includes("photo") || 
+                                  d.docType?.toLowerCase().includes("profile") ||
+                                  d.docType?.toLowerCase().includes("picture")
+                                );
+                                if (photoDoc) {
+                                  return <img src={photoDoc.fileUrl || `/api/documents/${photoDoc.id}`} alt="Candidate Photo" className="h-full w-full object-cover" />;
+                                }
+                                return scoreOpen.candidateName.charAt(0).toUpperCase();
+                              })()}
+                            </div>
+                            <div className="space-y-1">
+                              <h3 className="text-xl font-black text-slate-900 leading-tight">{candDetails?.fullName}</h3>
+                              <p className="text-xs font-mono font-bold text-slate-400">{candDetails?.candidateCode}</p>
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                <Badge variant="outline" className="text-[9px] uppercase tracking-wider bg-slate-50 text-slate-500 border-slate-200 px-2 py-0.5">
+                                  DOB: {candDetails?.dateOfBirth || "N/A"}
+                                </Badge>
+                                <Badge variant="outline" className="text-[9px] uppercase tracking-wider bg-slate-50 text-slate-500 border-slate-200 px-2 py-0.5">
+                                  Gender: {candDetails?.gender || "N/A"}
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-slate-405 uppercase tracking-widest leading-none">Email Address</p>
+                              <p className="text-sm font-semibold text-slate-750">{candDetails?.email}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-slate-405 uppercase tracking-widest leading-none">Phone Contact</p>
+                              <p className="text-sm font-semibold text-slate-750">{candDetails?.phone || "N/A"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-slate-405 uppercase tracking-widest leading-none">UG Qualification</p>
+                              <p className="text-sm font-semibold text-slate-750">{candDetails?.qualification || "N/A"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-slate-405 uppercase tracking-widest leading-none">PG Qualification</p>
+                              <p className="text-sm font-semibold text-slate-750">{candDetails?.pgQualifications || "N/A"}</p>
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <p className="text-[10px] font-black text-slate-405 uppercase tracking-widest leading-none">Medical College / University</p>
+                              <p className="text-sm font-semibold text-slate-750">{candDetails?.collegeName || "N/A"}</p>
+                            </div>
+                          </div>
+
+                          <div className="border-t pt-4 space-y-3.5">
+                            <div>
+                              <h4 className="text-[10px] font-black text-slate-450 uppercase tracking-widest mb-1">Applied Specialties Progress</h4>
+                              <p className="text-[9px] text-muted-foreground">Candidate's statuses under active panels today</p>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {candDetails?.applications?.map((app: any) => {
+                                const spec = specialities.find(s => s.id === app.specialityId);
+                                return (
+                                  <div key={app.id} className="flex justify-between items-center bg-slate-50 border border-slate-100 p-3 rounded-xl shadow-xs">
+                                    <span className="font-bold text-xs text-slate-750">{spec?.name || "Specialization"}</span>
+                                    <Badge variant={app.status === "completed" ? "default" : "secondary"} className={`text-[9px] uppercase tracking-wider font-extrabold h-5 ${app.status === "completed" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200"}`}>
+                                      {app.status}
+                                    </Badge>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* APPLICATION FORM TAB (LAZY LOADED) */}
+                      {activeDossierTab === "pdf" && (
+                        <div className="w-full h-full min-h-[50vh] relative">
+                          {scoreOpen.submissionId ? (
+                            <iframe 
+                              src={`/api/submission-view/${scoreOpen.submissionId}?token=${localStorage.getItem("fellowship_token")}`} 
+                              className="w-full h-full border-none absolute inset-0" 
+                              title="Candidate Application Form"
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center h-full text-muted-foreground text-sm font-semibold">
+                              No print submission available
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* LORS TAB (LAZY LOADED) */}
+                      {activeDossierTab === "lors" && (
+                        <div className="space-y-4">
+                          {(() => {
+                            const lors = candDetails?.documents?.filter((d: any) => 
+                              d.docType?.toLowerCase().includes("lor") || 
+                              d.fileName?.toLowerCase().includes("lor") || 
+                              d.fileName?.toLowerCase().includes("recommendation")
+                            ) || [];
+
+                            if (lors.length === 0) {
+                              return (
+                                <div className="text-center py-12 text-slate-400 text-xs font-bold flex flex-col items-center justify-center gap-1">
+                                  <AlertTriangle className="h-6 w-6 text-amber-500" />
+                                  No LOR files uploaded for this candidate.
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div className="space-y-6">
+                                <div>
+                                  <h4 className="text-[10px] font-black text-slate-450 uppercase tracking-widest mb-1">Letters of Recommendation</h4>
+                                  <p className="text-[9px] text-muted-foreground">Click a file to open LOR in full view</p>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {lors.map((lor: any, idx: number) => (
+                                    <div key={lor.id} className="border border-indigo-100 rounded-2xl bg-indigo-50/20 p-4 flex flex-col justify-between space-y-3.5 shadow-xs">
+                                      <div className="flex items-start gap-3">
+                                        <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                                          <FileText className="h-4.5 w-4.5" />
+                                        </div>
+                                        <div className="overflow-hidden">
+                                          <p className="text-xs font-black text-slate-800 truncate" title={lor.fileName}>{lor.fileName}</p>
+                                          <p className="text-[10px] text-slate-400 uppercase tracking-wider font-mono mt-0.5">LOR {idx + 1}</p>
+                                        </div>
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => window.open(lor.fileUrl || `/api/documents/${lor.id}?token=${localStorage.getItem("fellowship_token")}`, "_blank")}
+                                        className="h-8 text-[10px] font-black uppercase text-indigo-700 border-indigo-200 hover:bg-indigo-50 w-full"
+                                      >
+                                        Open LOR File
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      {/* SUPPORTING DOCUMENTS TAB (LAZY LOADED) */}
+                      {activeDossierTab === "docs" && (
+                        <div className="space-y-4">
+                          {(() => {
+                            const supporting = candDetails?.documents?.filter((d: any) => 
+                              !d.docType?.toLowerCase().includes("photo") && 
+                              !d.docType?.toLowerCase().includes("profile") &&
+                              !d.docType?.toLowerCase().includes("picture") &&
+                              !d.docType?.toLowerCase().includes("lor") && 
+                              !d.fileName?.toLowerCase().includes("lor") && 
+                              !d.fileName?.toLowerCase().includes("recommendation")
+                            ) || [];
+
+                            if (supporting.length === 0) {
+                              return (
+                                <div className="text-center py-12 text-slate-400 text-xs font-bold flex flex-col items-center justify-center gap-1">
+                                  <HelpCircle className="h-6 w-6 text-slate-350" />
+                                  No supporting files uploaded.
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div className="space-y-6">
+                                <div>
+                                  <h4 className="text-[10px] font-black text-slate-450 uppercase tracking-widest mb-1">Supporting Certificates & Files</h4>
+                                  <p className="text-[9px] text-muted-foreground">Click a file to open supporting documentation in full view</p>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {supporting.map((doc: any) => (
+                                    <div key={doc.id} className="border border-slate-205 rounded-2xl bg-slate-50/50 p-4 flex flex-col justify-between space-y-3 shadow-xs">
+                                      <div className="flex items-start gap-3">
+                                        <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-650 flex items-center justify-center shrink-0">
+                                          <FileText className="h-4.5 w-4.5" />
+                                        </div>
+                                        <div className="overflow-hidden">
+                                          <p className="text-xs font-black text-slate-800 truncate" title={doc.fileName}>{doc.fileName}</p>
+                                          <p className="text-[9px] text-slate-400 uppercase tracking-wider font-mono mt-0.5">{doc.docType || "Supporting Document"}</p>
+                                        </div>
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => window.open(doc.fileUrl || `/api/documents/${doc.id}?token=${localStorage.getItem("fellowship_token")}`, "_blank")}
+                                        className="h-8 text-[10px] font-black uppercase text-slate-700 border-slate-250 hover:bg-slate-100 w-full"
+                                      >
+                                        Open Document
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -318,7 +548,7 @@ function DoctorView({ toast, qc }: { toast: ReturnType<typeof import("../hooks/u
                   <div className="flex gap-2">
                     <Button 
                       variant="outline" 
-                      onClick={() => setScoreOpen(null)} 
+                      onClick={() => { setScoreOpen(null); setActiveDossierTab("profile"); }} 
                       className="rounded-xl h-12 text-xs font-bold uppercase tracking-wider flex-1"
                     >
                       Cancel
@@ -756,6 +986,83 @@ function PanelsTab({ toast, qc, candidates, specialities }: {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const [reassignCandidate, setReassignCandidate] = useState<QueueEntry | null>(null);
+
+  const reorderQueueMutation = useMutation({
+    mutationFn: ({ panelId, candidateIds }: { panelId: number; candidateIds: number[] }) =>
+      api.post(`/panels/${panelId}/queue/reorder`, { candidateIds }),
+    onSuccess: () => {
+      toast({ title: "Queue reordered" });
+      qc.invalidateQueries({ queryKey: ["panel-queue", selectedPanelId] });
+      qc.invalidateQueries({ queryKey: ["display-live"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const priorityInsertMutation = useMutation({
+    mutationFn: ({ panelId, candidateId, position }: { panelId: number; candidateId: number; position: number }) =>
+      api.post(`/panels/${panelId}/queue/insert`, { candidateId, position }),
+    onSuccess: () => {
+      toast({ title: "Priority candidate inserted at top" });
+      qc.invalidateQueries({ queryKey: ["panel-queue", selectedPanelId] });
+      qc.invalidateQueries({ queryKey: ["display-live"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const reassignQueueMutation = useMutation({
+    mutationFn: ({ panelId, candidateId, targetPanelId }: { panelId: number; candidateId: number; targetPanelId: number }) =>
+      api.post(`/panels/${panelId}/queue/reassign`, { candidateId, targetPanelId }),
+    onSuccess: () => {
+      toast({ title: "Candidate reassigned successfully" });
+      qc.invalidateQueries({ queryKey: ["panel-queue", selectedPanelId] });
+      qc.invalidateQueries({ queryKey: ["panels"] });
+      qc.invalidateQueries({ queryKey: ["display-live"] });
+      setReassignCandidate(null);
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const handleMoveUp = (index: number) => {
+    if (index === 0 || !selectedPanel) return;
+    const newQueue = [...waitingQueue];
+    const temp = newQueue[index];
+    newQueue[index] = newQueue[index - 1]!;
+    newQueue[index - 1] = temp!;
+
+    const fullReorderedIds: number[] = [];
+    if (currentCandidate) {
+      fullReorderedIds.push(currentCandidate.candidateId);
+    }
+    newQueue.forEach(item => fullReorderedIds.push(item.candidateId));
+    doneQueue.forEach(item => fullReorderedIds.push(item.candidateId));
+
+    reorderQueueMutation.mutate({
+      panelId: selectedPanel.id,
+      candidateIds: fullReorderedIds
+    });
+  };
+
+  const handleMoveDown = (index: number) => {
+    if (index === waitingQueue.length - 1 || !selectedPanel) return;
+    const newQueue = [...waitingQueue];
+    const temp = newQueue[index];
+    newQueue[index] = newQueue[index + 1]!;
+    newQueue[index + 1] = temp!;
+
+    const fullReorderedIds: number[] = [];
+    if (currentCandidate) {
+      fullReorderedIds.push(currentCandidate.candidateId);
+    }
+    newQueue.forEach(item => fullReorderedIds.push(item.candidateId));
+    doneQueue.forEach(item => fullReorderedIds.push(item.candidateId));
+
+    reorderQueueMutation.mutate({
+      panelId: selectedPanel.id,
+      candidateIds: fullReorderedIds
+    });
+  };
+
   // Auto-select first panel
   useEffect(() => {
     if (panels.length > 0 && !selectedPanelId) {
@@ -952,13 +1259,51 @@ function PanelsTab({ toast, qc, candidates, specialities }: {
                           </div>
                           <div className="flex items-center gap-1">
                             {i === 0 && !currentCandidate && (
-                              <Button size="sm" className="h-7 gap-1 text-xs"
+                              <Button size="sm" className="h-7 gap-1 text-xs px-2"
                                 onClick={() => updateQueueMutation.mutate({ panelId: selectedPanel.id, candidateId: q.candidateId, status: "in_progress" })}>
                                 <ArrowRight className="h-3 w-3" /> Call
                               </Button>
                             )}
-                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => removeFromQueueMutation.mutate({ panelId: selectedPanel.id, candidateId: q.candidateId })}>
+                            <Button 
+                              size="icon" 
+                              variant="ghost" 
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-50"
+                              disabled={i === 0 || reorderQueueMutation.isPending}
+                              onClick={() => handleMoveUp(i)}
+                              title="Move Up"
+                            >
+                              <ChevronUp className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              size="icon" 
+                              variant="ghost" 
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-50"
+                              disabled={i === waitingQueue.length - 1 || reorderQueueMutation.isPending}
+                              onClick={() => handleMoveDown(i)}
+                              title="Move Down"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              size="icon" 
+                              variant="ghost" 
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-orange-600 hover:bg-orange-50"
+                              onClick={() => setReassignCandidate(q)}
+                              title="Reassign to another panel"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              size="icon" 
+                              variant="ghost" 
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                if (window.confirm(`Remove ${q.candidateName} from the queue?`)) {
+                                  removeFromQueueMutation.mutate({ panelId: selectedPanel.id, candidateId: q.candidateId });
+                                }
+                              }}
+                              title="Remove"
+                            >
                               <X className="h-3.5 w-3.5" />
                             </Button>
                           </div>
@@ -996,6 +1341,10 @@ function PanelsTab({ toast, qc, candidates, specialities }: {
                       <Button size="sm" className="h-8 text-xs gap-1" disabled={!addCandidateId || addToQueueMutation.isPending}
                         onClick={() => addCandidateId && addToQueueMutation.mutate({ panelId: selectedPanel.id, candidateId: Number(addCandidateId) })}>
                         <Plus className="h-3.5 w-3.5" /> Add
+                      </Button>
+                      <Button size="sm" variant="destructive" className="h-8 text-xs gap-1 bg-red-650 hover:bg-red-705 text-white font-bold" disabled={!addCandidateId || priorityInsertMutation.isPending}
+                        onClick={() => addCandidateId && priorityInsertMutation.mutate({ panelId: selectedPanel.id, candidateId: Number(addCandidateId), position: 0 })}>
+                        <ShieldAlert className="h-3.5 w-3.5 text-white animate-pulse" /> Priority Insert
                       </Button>
                     </div>
                   </div>
@@ -1136,6 +1485,57 @@ function PanelsTab({ toast, qc, candidates, specialities }: {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Reassign Candidate Dialog */}
+      <Dialog open={reassignCandidate !== null} onOpenChange={(o) => { if (!o) setReassignCandidate(null); }}>
+        <DialogContent className="max-w-sm rounded-2xl bg-white p-6 shadow-xl border border-slate-100">
+          <DialogHeader className="pb-3 border-b">
+            <DialogTitle className="flex items-center gap-2 text-slate-800 font-black uppercase tracking-wider text-sm">
+              <ExternalLink className="h-5 w-5 text-indigo-500 animate-pulse" />
+              Reassign Candidate
+            </DialogTitle>
+          </DialogHeader>
+          {reassignCandidate && (
+            <div className="space-y-4 py-4">
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 text-xs">
+                <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Candidate to Reassign</p>
+                <p className="font-bold text-sm text-slate-800 mt-1">{reassignCandidate.candidateName}</p>
+                <p className="font-mono text-[10px] text-slate-500 mt-0.5">{reassignCandidate.candidateCode}</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700">Target Interview Panel</Label>
+                <Select
+                  onValueChange={(val) => {
+                    if (val && selectedPanel) {
+                      reassignQueueMutation.mutate({
+                        panelId: selectedPanel.id,
+                        candidateId: reassignCandidate.candidateId,
+                        targetPanelId: Number(val)
+                      });
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-10 text-xs rounded-xl">
+                    <SelectValue placeholder="Choose target panel..." />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {panels
+                      .filter((p) => p.id !== selectedPanel?.id)
+                      .map((p) => (
+                        <SelectItem key={p.id} value={String(p.id)} className="text-xs">
+                          {p.name} (Room {p.roomNumber})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="pt-3 border-t">
+            <Button variant="outline" className="rounded-xl h-10 text-xs font-bold" onClick={() => setReassignCandidate(null)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1152,6 +1552,7 @@ function EditableCell({
   max: number; 
   canEdit: boolean; 
 }) {
+  const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [tempValue, setTempValue] = useState<string>(value !== null ? String(value) : "");
   const [isSaving, setIsSaving] = useState(false);
@@ -1166,10 +1567,10 @@ function EditableCell({
 
   const handleBlurOrEnter = async () => {
     if (isSaving) return;
-    setIsEditing(false);
     
     const trimmed = tempValue.trim();
     if (trimmed === "") {
+      setIsEditing(false);
       if (value !== null) {
         setIsSaving(true);
         try {
@@ -1182,10 +1583,17 @@ function EditableCell({
 
     const num = parseFloat(trimmed);
     if (isNaN(num) || num < 0 || num > max) {
+      toast({
+        title: "Validation warning",
+        description: `Score must be a valid number between 0 and ${max}.`,
+        variant: "destructive"
+      });
       setTempValue(value !== null ? String(value) : "");
+      setIsEditing(false);
       return;
     }
 
+    setIsEditing(false);
     if (num !== value) {
       setIsSaving(true);
       try {
@@ -1443,7 +1851,11 @@ function MarkSheetTab({ specialities, candidates, scores, isCEC, toast, doctors 
                     <th className="text-left px-6 py-3.5 font-black">Candidate</th>
                     <th className="text-center px-4 py-3.5 font-black w-24">Code</th>
                     <th className="text-right px-4 py-3.5 font-black w-28">MCQ (Max 50)</th>
-                    <th className="text-right px-4 py-3.5 font-black w-28">VIVA (Max 50)</th>
+                    <th className="text-right px-4 py-3.5 font-black w-24">Doc 1 (Max 50)</th>
+                    <th className="text-right px-4 py-3.5 font-black w-24">Doc 2 (Max 50)</th>
+                    <th className="text-right px-4 py-3.5 font-black w-24">Doc 3 (Max 50)</th>
+                    <th className="text-right px-4 py-3.5 font-black w-24">Doc 4 (Max 50)</th>
+                    <th className="text-right px-4 py-3.5 font-black w-28">Avg VIVA (Max 50)</th>
                     <th className="text-right px-4 py-3.5 font-black w-28">Mind Matter (Max 10)</th>
                     <th className="text-right px-6 py-3.5 font-black w-32">Total (Max 110)</th>
                   </tr>
@@ -1469,6 +1881,9 @@ function MarkSheetTab({ specialities, candidates, scores, isCEC, toast, doctors 
                     const totalScore = (mcqScore !== null || avgViva !== null || mindMatterScore !== null)
                       ? (mcqScore ?? 0) + (avgViva ?? 0) + (mindMatterScore ?? 0)
                       : null;
+
+                    // Stably sort doctor scores for display in doctor columns
+                    const sortedScores = [...candScores].sort((a, b) => a.doctorId - b.doctorId);
 
                     return (
                       <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
@@ -1503,6 +1918,46 @@ function MarkSheetTab({ specialities, candidates, scores, isCEC, toast, doctors 
                             }}
                           />
                         </td>
+                        {/* 4 Doctor columns */}
+                        {[1, 2, 3, 4].map((colIndex) => {
+                          const sEntry = sortedScores[colIndex - 1];
+                          return (
+                            <td key={colIndex} className="px-4 py-4 text-right">
+                              {sEntry ? (
+                                <div className="flex flex-col items-end">
+                                  <EditableCell
+                                    value={sEntry.score}
+                                    max={50}
+                                    canEdit={canEdit}
+                                    onSave={async (val) => {
+                                      await updateScoreMutation.mutateAsync({
+                                        candidateId: c.id,
+                                        vivaScore: val,
+                                        targetDoctorId: sEntry.doctorId
+                                      });
+                                    }}
+                                  />
+                                  <span className="block text-[8px] text-slate-400 truncate max-w-[80px] text-right" title={sEntry.doctorName}>
+                                    {sEntry.doctorName}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="text-slate-350 text-xs font-mono">
+                                  {canEdit ? (
+                                    <button
+                                      onClick={() => setVivaDialogOpen(c)}
+                                      className="text-[10px] text-indigo-400 hover:text-indigo-600 hover:underline font-sans font-bold"
+                                    >
+                                      + Doc
+                                    </button>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
                         <td className="px-4 py-4 text-right">
                           <div className="flex flex-col items-end">
                             <div 

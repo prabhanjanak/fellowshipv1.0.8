@@ -23,3 +23,20 @@
 - [x] Terminate stale backend server instance and launch updated build on port 3002
 - [x] Verify `/api/submission-view/:id` matches successfully (returns `401 Unauthorized: Missing token` instead of `404 Not Found`)
 
+- [x] **Milestone 5: Frontend Session Management & Graceful Retries**
+  - [x] Update `api.ts` request wrapper to retry failed network calls gracefully.
+  - [x] Implement automatic idle detection auto-logout in `AuthContext.tsx`.
+  - [x] Build Session Management UI widget in the Admin Dashboard to view/terminate active sessions.
+- [x] **Milestone 6: Redesigned Admin Master & Queue Dashboards**
+  - [x] Redesign `DashboardPage.tsx` with Candidate Progress Matrix showing specialty-wise status.
+  - [x] Add Smart Station Suggestion Engine showing next required station.
+  - [x] Redesign Queue management view in `InterviewsPage.tsx` with reorder, override, and reassign actions.
+  - [x] Update doctor view with lazily loaded dossiers (photo, LORs, PDF).
+  - [x] Mappings for shared Mind Mapping Panel seeing all candidates.
+- [x] **Milestone 7: Live TV Display Modifications**
+  - [x] Update `DisplayPage.tsx` / `QueueDisplayPage.tsx` to handle multi-specialty live changes.
+  - [x] Add auto-refresh polling every 3 seconds to reflect real-time reordering.
+- [x] **Milestone 8: Styled Excel Report Generator**
+  - [x] Update candidate and marksheet exports in `reports.ts` & `interviews.ts` to output detailed rows per applied specialty.
+- [x] **Milestone 9: System Validation**
+  - [x] Run typescript checks and local servers to confirm correct compilation and zero crashes.

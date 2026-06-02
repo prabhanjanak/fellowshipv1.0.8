@@ -29,7 +29,7 @@ export default function DisplayPage() {
   const { data: panels = [], isLoading, error } = useQuery<PanelDisplay[]>({
     queryKey: ["display-live"],
     queryFn: () => api.get<PanelDisplay[]>("/display/live"),
-    refetchInterval: 5000,
+    refetchInterval: 3000,
   });
 
   if (!user) return null;
@@ -83,7 +83,7 @@ export default function DisplayPage() {
 
       {/* Footer */}
       <div className="bg-gray-900 border-t border-gray-800 px-8 py-2 flex items-center justify-between">
-        <p className="text-xs text-gray-600">Refreshes every 5 seconds · Sankara Eye Care Institutions</p>
+        <p className="text-xs text-gray-600">Refreshes every 3 seconds · Sankara Eye Care Institutions</p>
         <div className="flex items-center gap-2 text-xs text-emerald-500">
           <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           Live

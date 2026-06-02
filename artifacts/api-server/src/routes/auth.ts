@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
-import { db, usersTable, unitsTable } from "@workspace/db";
+import { db, usersTable, unitsTable, userSessionsTable, auditLogsTable } from "@workspace/db";
 import { signToken, hashPassword, comparePassword } from "../lib/auth";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requireRole } from "../middleware/auth";
 
 const router: Router = Router();
 
@@ -54,8 +54,112 @@ router.post("/auth/login", async (req, res) => {
     res.status(401).json({ error: "Invalid email or password" });
     return;
   }
+  
   const token = signToken({ userId: user.id, email: user.email, role: user.role });
+
+  // Store active session in database
+  const ipAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1").split(",")[0]!.trim();
+  const deviceInfo = String(req.headers["user-agent"] || "Unknown Device");
+  
+  await db.insert(userSessionsTable).values({
+    userId: user.id,
+    token,
+    ipAddress,
+    deviceInfo,
+    isActive: true,
+  });
+
+  // Write Login Audit Log
+  await db.insert(auditLogsTable).values({
+    userId: user.id,
+    userEmail: user.email,
+    userName: user.fullName,
+    action: "LOGIN",
+    details: `Successfully logged in. IP: ${ipAddress}, Agent: ${deviceInfo}`,
+    ipAddress,
+  });
+
   res.json({ token, user: await formatUser(user) });
+});
+
+router.post("/auth/logout", requireAuth, async (req, res) => {
+  try {
+    const token = req.sessionToken;
+    if (token) {
+      await db.update(userSessionsTable).set({ isActive: false }).where(eq(userSessionsTable.token, token));
+      
+      // Log manual logout audit
+      const ipAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1").split(",")[0]!.trim();
+      await db.insert(auditLogsTable).values({
+        userId: req.user!.userId,
+        userEmail: req.user!.email,
+        action: "LOGOUT",
+        details: "User manually logged out.",
+        ipAddress,
+      });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to logout" });
+  }
+});
+
+router.get("/auth/sessions", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req, res) => {
+  try {
+    const sessions = await db.select().from(userSessionsTable).where(eq(userSessionsTable.isActive, true));
+    const users = await db.select().from(usersTable);
+
+    const result = sessions.map((s) => {
+      const u = users.find((x) => x.id === s.userId);
+      return {
+        id: s.id,
+        userId: s.userId,
+        userName: u?.fullName ?? "Unknown User",
+        userEmail: u?.email ?? "Unknown Email",
+        role: u?.role ?? "student",
+        ipAddress: s.ipAddress,
+        deviceInfo: s.deviceInfo,
+        createdAt: s.createdAt.toISOString(),
+        lastActivityAt: s.lastActivityAt.toISOString(),
+      };
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to fetch active sessions" });
+  }
+});
+
+router.post("/auth/sessions/terminate", requireAuth, requireRole("super_admin", "program_admin", "central_exam_coordinator"), async (req, res) => {
+  const { sessionId } = req.body as { sessionId: number };
+  if (!sessionId) {
+    res.status(400).json({ error: "sessionId is required" });
+    return;
+  }
+  try {
+    const [sess] = await db.select().from(userSessionsTable).where(eq(userSessionsTable.id, sessionId));
+    if (!sess) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    await db.update(userSessionsTable).set({ isActive: false }).where(eq(userSessionsTable.id, sessionId));
+
+    // Audit log
+    const [u] = await db.select().from(usersTable).where(eq(usersTable.id, sess.userId));
+    const ipAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1").split(",")[0]!.trim();
+    await db.insert(auditLogsTable).values({
+      userId: req.user!.userId,
+      userEmail: req.user!.email,
+      action: "SESSION_TERMINATE",
+      details: `Admin terminated active session for user: ${u?.email || "ID " + sess.userId}`,
+      ipAddress,
+    });
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to terminate session" });
+  }
 });
 
 router.get("/auth/me", requireAuth, async (req, res) => {
